@@ -30,3 +30,14 @@
 *.exe
 *.out
 *.app
+
+.vs/*
+bin/*
+_build_temp/*
+*.vcxproj
+*.filters
+*.user
+*.sln
+PathTracer/imgui.ini
+
+PathTracer/pathtracer_runtimedependencies.txt
