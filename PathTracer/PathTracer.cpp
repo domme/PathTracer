@@ -49,6 +49,8 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 {
   ImGuiRendering::Init(myRuntime->GetRenderOutput(), myRuntime);
 
+  UpdateDepthbuffer();
+
   myUnlitMeshShader = locLoadShader("resources/shaders/unlit_mesh.hlsl");
   ASSERT(myUnlitMeshShader);
 
@@ -198,6 +200,7 @@ PathTracer::~PathTracer()
 void PathTracer::OnWindowResized(uint aWidth, uint aHeight)
 {
   Application::OnWindowResized(aWidth, aHeight);
+  UpdateDepthbuffer();
 }
 
 void PathTracer::BeginFrame()
@@ -234,7 +237,8 @@ void PathTracer::RenderRaster()
   GPU_BEGIN_PROFILE(ctx, "Render scene", 0u);
   ctx->SetViewport(glm::uvec4(0, 0, myWindow->GetWidth(), myWindow->GetHeight()));
   ctx->SetClipRect(glm::uvec4(0, 0, myWindow->GetWidth(), myWindow->GetHeight()));
-  ctx->SetRenderTarget(myRenderOutput->GetBackbufferRtv(), myRenderOutput->GetDepthStencilDsv());
+  ctx->ClearDepthStencilTarget(myDepthStencilDsv.get(), 1.0f, 0u, (uint)DepthStencilClearFlags::CLEAR_ALL);
+  ctx->SetRenderTarget(myRenderOutput->GetBackbufferRtv(), myDepthStencilDsv.get());
 
   ctx->SetDepthStencilState(nullptr);
   ctx->SetBlendState(nullptr);
@@ -350,6 +354,33 @@ void PathTracer::RenderRT()
 void PathTracer::EndFrame()
 {
   Application::EndFrame();
+}
+
+void PathTracer::UpdateDepthbuffer()
+{
+  uint width = myWindow->GetWidth();
+  uint height = myWindow->GetHeight();
+
+  TextureProperties dsTexProps;
+  dsTexProps.myDimension = GpuResourceDimension::TEXTURE_2D;
+  dsTexProps.bIsDepthStencil = true;
+  dsTexProps.myFormat = DataFormat::D_24UNORM_S_8UI;
+  dsTexProps.myIsRenderTarget = true;
+  dsTexProps.myIsShaderWritable = false;
+  dsTexProps.myWidth = width;
+  dsTexProps.myHeight = height;
+  dsTexProps.myNumMipLevels = 1u;
+
+  SharedPtr<Texture> dsTexture = RenderCore::CreateTexture(dsTexProps, "Backbuffer DepthStencil Texture");
+  ASSERT(dsTexture != nullptr);
+
+  TextureViewProperties props;
+  props.myDimension = GpuResourceDimension::TEXTURE_2D;
+  props.myIsRenderTarget = true;
+  props.myFormat = DataFormat::D_24UNORM_S_8UI;
+  props.mySubresourceRange = dsTexture->mySubresources;
+  myDepthStencilDsv = RenderCore::CreateTextureView(dsTexProps, props, "DepthStencil Texture");
+  ASSERT(myDepthStencilDsv != nullptr);
 }
 
 

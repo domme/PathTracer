@@ -20,6 +20,7 @@ namespace Fancy
   struct RenderPlatformProperties;
   struct WindowParameters;
   class TextureView;
+  class Texture;
 }
 
 using namespace Fancy;
@@ -44,6 +45,8 @@ public:
   void EndFrame() override;
 
 private:
+  void UpdateDepthbuffer();
+
   void RenderRaster();
   void RenderRT();
 
@@ -57,6 +60,7 @@ private:
   SharedPtr<GpuBufferView> myPerInstanceData;
   SharedPtr<GpuBufferView> myMaterialBuffer;
   SharedPtr<TextureView> myRtOutTextureRW;
+  SharedPtr<TextureView> myDepthStencilDsv;
 
   ImGuiContext* myImGuiContext = nullptr;
   bool myRenderRaster = false;
