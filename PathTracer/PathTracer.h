@@ -25,6 +25,24 @@ namespace Fancy
 
 using namespace Fancy;
 
+struct BlasData
+{
+  SharedPtr<RtAccelerationStructure> myBLAS;
+  SharedPtr<GpuBufferView> myTriangleIndices;
+  SharedPtr<GpuBufferView> myVertexData;
+};
+
+struct RaytracingScene
+{
+  SharedPtr<GpuBufferView> myInstanceData;
+  SharedPtr<GpuBufferView> myMaterialData;
+  SharedPtr<RtPipelineState> myRtPso;
+  SharedPtr<RtShaderBindingTable> mySBT;
+
+  SharedPtr<RtAccelerationStructure> myTLAS;
+  eastl::vector<BlasData> myBlasDatas;
+};
+
 class PathTracer : public Fancy::Application
 {
 public:
@@ -53,15 +71,11 @@ private:
   Fancy::SharedPtr<Fancy::Scene> myScene;
   Fancy::SharedPtr<Fancy::ShaderPipeline> myUnlitMeshShader;
 
-  eastl::vector<SharedPtr<RtAccelerationStructure>> myBLAS;
-  SharedPtr<RtAccelerationStructure> myTLAS;
-  SharedPtr<RtPipelineState> myRtPso;
-  SharedPtr<RtShaderBindingTable> mySBT;
-  SharedPtr<GpuBufferView> myPerInstanceData;
-  SharedPtr<GpuBufferView> myMaterialBuffer;
+  RaytracingScene myRtScene;
+  
   SharedPtr<TextureView> myRtOutTextureRW;
   SharedPtr<TextureView> myDepthStencilDsv;
-
+  
   ImGuiContext* myImGuiContext = nullptr;
   bool myRenderRaster = false;
 };

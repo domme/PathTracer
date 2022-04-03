@@ -1,20 +1,6 @@
 #include "Common.hlsl"
 #include "fancy/resources/shaders/GlobalResources.h"
 
-cbuffer Constants : register(b0, Space_LocalCBuffer)
-{
-  float3 myNearPlaneCorner;
-  bool myIsBGR;
-
-  float3 myXAxis;
-  uint myOutTexIndex;
-
-  float3 myYAxis;
-  uint myAsIndex;
-
-  float3 myCameraPos;
-};
-
 [shader("raygeneration")] 
 void RayGen() 
 {
@@ -43,4 +29,5 @@ void RayGen()
             payload);
 
   theRwTextures2D[myOutTexIndex][pixel] = float4(myIsBGR ? payload.colorAndDistance.bgr : payload.colorAndDistance.rgb, 1.f);
+  
 }

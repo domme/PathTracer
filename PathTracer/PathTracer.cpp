@@ -54,9 +54,15 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   myUnlitMeshShader = locLoadShader("resources/shaders/unlit_mesh.hlsl");
   ASSERT(myUnlitMeshShader);
 
+  eastl::fixed_vector<VertexShaderAttributeDesc, 16> vertexAttributes = {
+    { VertexAttributeSemantic::POSITION, 0, DataFormat::RGB_32F },
+    { VertexAttributeSemantic::NORMAL, 0, DataFormat::RGB_32F },
+    { VertexAttributeSemantic::TEXCOORD, 0, DataFormat::RG_32F }
+  };
+
   SceneData sceneData;
   MeshImporter importer;
-  const bool importSuccess = importer.Import("resources/models/Cycles.obj", myUnlitMeshShader.get(), sceneData);
+  const bool importSuccess = importer.Import("resources/models/Cycles.obj", vertexAttributes, sceneData);
   ASSERT(importSuccess);
 
   InitRtScene(sceneData);
@@ -79,6 +85,24 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   myCamera.UpdateProjection();
 }
 
+// void AppendRtTriangleData(const MeshPartData& aMeshPart, )
+
+glm::uvec2 GetOffsetSize(const VertexInputLayoutProperties& someVertexProps, VertexAttributeSemantic aSemantic, uint aSemanticIndex)
+{
+  uint offset = 0;
+  for (const VertexInputAttributeDesc& attribute : someVertexProps.myAttributes)
+  {
+    uint size = DataFormatInfo::GetFormatInfo(attribute.myFormat).mySizeBytes;
+    if (attribute.mySemantic == aSemantic && attribute.mySemanticIndex == aSemanticIndex)
+    {
+      return { offset, size };
+    }
+    offset += size;
+  }
+
+  ASSERT(false);
+}
+
 void PathTracer::InitRtScene(const SceneData& aScene)
 {
   for (uint iMesh = 0u; iMesh < (uint) aScene.myMeshes.size(); ++iMesh)
@@ -86,7 +110,10 @@ void PathTracer::InitRtScene(const SceneData& aScene)
     const MeshData& mesh = aScene.myMeshes[iMesh];
 
     eastl::fixed_vector<RtAccelerationStructureGeometryData, 4> meshPartsGeometryDatas;
-
+    
+    uint numMeshVertices = 0u;
+    uint numMeshTriangles = 0u;
+    
     for (const MeshPartData& meshPart : mesh.myParts)
     {
       const VertexInputLayoutProperties& vertexProps = meshPart.myVertexLayoutProperties;
@@ -110,19 +137,78 @@ void PathTracer::InitRtScene(const SceneData& aScene)
       geometryData.myIndexData.myType = RT_BUFFER_DATA_TYPE_CPU_DATA;
       geometryData.myIndexData.myCpuData.myData = meshPart.myIndexData.data();
       geometryData.myIndexData.myCpuData.myDataSize = VECTOR_BYTESIZE(meshPart.myIndexData);
+
+      numMeshVertices += numVertices;
+      numMeshTriangles += geometryData.myNumIndices / 3;
     }
 
-    StaticString<64> name("BLAS mesh %d", iMesh);
-    myBLAS.push_back(RenderCore::CreateRtBottomLevelAccelerationStructure(meshPartsGeometryDatas.data(), meshPartsGeometryDatas.size(), 0u, name.GetBuffer()));
-    ASSERT(myBLAS.back() != nullptr);
+    struct VertexData
+    {
+      glm::float3 myNormal;
+      glm::float2 myUv;
+    };
+
+    glm::uvec2 normalOffsetSize = GetOffsetSize(aScene.myVertexInputLayoutProperties, VertexAttributeSemantic::NORMAL, 0u);
+    glm::uvec2 uvOffsetSize = GetOffsetSize(aScene.myVertexInputLayoutProperties, VertexAttributeSemantic::TEXCOORD, 0u);
+    ASSERT(normalOffsetSize.y == sizeof(glm::float3));
+    ASSERT(uvOffsetSize.y == sizeof(glm::float2));
+    
+    eastl::vector<VertexData> vertexData;
+    vertexData.reserve(numMeshVertices);
+
+    eastl::vector<glm::uvec3> triangleIndices;
+    triangleIndices.resize(numMeshTriangles);
+    glm::uvec3* dstTrianglePtr = triangleIndices.data();
+
+    for (const MeshPartData& meshPart : mesh.myParts)
+    {
+      const VertexInputLayoutProperties& vertexProps = meshPart.myVertexLayoutProperties;
+
+      const uint srcVertexStride = vertexProps.GetOverallVertexSize();
+      const uint numVertices = VECTOR_BYTESIZE(meshPart.myVertexData) / srcVertexStride;
+      const uint8* srcData = meshPart.myVertexData.data();
+      for (uint i = 0u; i < numVertices; ++i)
+      {
+        VertexData& dstData = vertexData.push_back();
+        memcpy(&dstData.myNormal, srcData + normalOffsetSize.x, sizeof(dstData.myNormal));
+        memcpy(&dstData.myUv, srcData + uvOffsetSize.x, sizeof(dstData.myUv));
+        srcData += srcVertexStride;
+      }
+
+      memcpy(dstTrianglePtr, meshPart.myIndexData.data(), VECTOR_BYTESIZE(meshPart.myIndexData));
+      dstTrianglePtr += VECTOR_BYTESIZE(meshPart.myIndexData);
+    }
+
+    BlasData& blasData = myRtScene.myBlasDatas.push_back();
+
+    GpuBufferProperties bufferProps;
+    bufferProps.myBindFlags = (uint) GpuBufferBindFlags::SHADER_BUFFER;
+    bufferProps.myNumElements = numMeshVertices;
+    bufferProps.myElementSizeBytes = sizeof(VertexData);
+    GpuBufferViewProperties bufferViewProps;
+    bufferViewProps.myIsRaw = true;
+    StaticString<64> name("Rt mesh vertexData %d", iMesh);
+    blasData.myVertexData = RenderCore::CreateBufferView(bufferProps, bufferViewProps, name.GetBuffer(), vertexData.data());
+
+    bufferProps.myNumElements = numMeshTriangles;
+    bufferProps.myElementSizeBytes = sizeof(glm::uvec3);
+    name.Format("Rt mesh triangles %d", iMesh);
+    blasData.myTriangleIndices = RenderCore::CreateBufferView(bufferProps, bufferViewProps, name.GetBuffer(), triangleIndices.data());
+
+    name.Format("BLAS mesh %d", iMesh);
+    blasData.myBLAS = RenderCore::CreateRtBottomLevelAccelerationStructure(meshPartsGeometryDatas.data(), meshPartsGeometryDatas.size(), 0u, name.GetBuffer());
+    ASSERT(blasData.myBLAS != nullptr);
   }
 
   struct PerInstanceData
   {
+    uint myIndexBufferDescriptorIndex;
+    uint myVertexBufferDescriptorIndex;
     uint myMaterialIndex;
   };
   eastl::vector<PerInstanceData> perInstanceDatas;
-  
+  perInstanceDatas.reserve((uint)aScene.myInstances.size());
+    
   eastl::fixed_vector<RtAccelerationStructureInstanceData, 16> instanceDatas;
   for (uint iInstance = 0u; iInstance < (uint) aScene.myInstances.size(); ++iInstance)
   {
@@ -130,35 +216,25 @@ void PathTracer::InitRtScene(const SceneData& aScene)
 
     PerInstanceData& perInstanceData = perInstanceDatas.push_back();
     perInstanceData.myMaterialIndex = instance.myMaterialIndex;
+    perInstanceData.myIndexBufferDescriptorIndex = myRtScene.myBlasDatas[instance.myMeshIndex].myTriangleIndices->GetGlobalDescriptorIndex();
+    perInstanceData.myVertexBufferDescriptorIndex = myRtScene.myBlasDatas[instance.myMeshIndex].myVertexData->GetGlobalDescriptorIndex();
 
     RtAccelerationStructureInstanceData& instanceData = instanceDatas.push_back();
     instanceData.myInstanceId = iInstance;
     instanceData.mySbtHitGroupOffset = 0;
-    instanceData.myInstanceBLAS = myBLAS[instance.myMeshIndex];
+    instanceData.myInstanceBLAS = myRtScene.myBlasDatas[instance.myMeshIndex].myBLAS;
     instanceData.myInstanceMask = UINT8_MAX;
     instanceData.myTransform = instance.myTransform;
     instanceData.myFlags = RT_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE | RT_INSTANCE_FLAG_FORCE_OPAQUE;
   }
 
-  myTLAS = RenderCore::CreateRtTopLevelAccelerationStructure(instanceDatas.data(), (uint) instanceDatas.size(), 0, "TLAS");
-
-  RtPipelineStateProperties rtPipelineProps;
-  const uint raygenIdx = rtPipelineProps.AddRayGenShader("resources/shaders/raytracing/RayGen.hlsl", "RayGen");
-  const uint missIdx = rtPipelineProps.AddMissShader("resources/shaders/raytracing/Miss.hlsl", "Miss");
-  const uint hitIdx = rtPipelineProps.AddHitGroup(L"HitGroup0", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr, nullptr, nullptr, nullptr, "resources/shaders/raytracing/Hit.hlsl", "ClosestHit");
-  rtPipelineProps.SetMaxAttributeSize(32u);
-  rtPipelineProps.SetMaxPayloadSize(128u);
-  rtPipelineProps.SetMaxRecursionDepth(2u);
-  myRtPso = RenderCore::CreateRtPipelineState(rtPipelineProps);
-
-  RtShaderBindingTableProperties sbtProps;
-  sbtProps.myNumRaygenShaderRecords = 1;
-  sbtProps.myNumMissShaderRecords = 5;
-  sbtProps.myNumHitShaderRecords = 5;
-  mySBT = RenderCore::CreateRtShaderTable(sbtProps);
-  mySBT->AddShaderRecord(myRtPso->GetRayGenShaderIdentifier(raygenIdx));
-  mySBT->AddShaderRecord(myRtPso->GetMissShaderIdentifier(missIdx));
-  mySBT->AddShaderRecord(myRtPso->GetHitShaderIdentifier(hitIdx));
+  GpuBufferProperties bufferProps;
+  bufferProps.myBindFlags = (uint)GpuBufferBindFlags::SHADER_BUFFER;
+  bufferProps.myNumElements = (uint) perInstanceDatas.size();
+  bufferProps.myElementSizeBytes = sizeof(PerInstanceData);
+  GpuBufferViewProperties bufferViewProps;
+  bufferViewProps.myIsRaw = true;
+  myRtScene.myInstanceData = RenderCore::CreateBufferView(bufferProps, bufferViewProps, "Rt per instance data", perInstanceDatas.data());
 
   struct MaterialData
   {
@@ -173,21 +249,30 @@ void PathTracer::InitRtScene(const SceneData& aScene)
     matData.myColor = MathUtil::Encode_Unorm_RGBA(mat.myParameters[(uint)MaterialParameterType::COLOR]);
   }
 
-  GpuBufferProperties bufferProps;
-  bufferProps.myBindFlags = (uint) GpuBufferBindFlags::SHADER_BUFFER;
   bufferProps.myElementSizeBytes = sizeof(MaterialData);
   bufferProps.myNumElements = materialDatas.size();
-
-  GpuBufferViewProperties bufferViewProps;
   bufferViewProps.myIsRaw = true;
-  bufferViewProps.myOffset = 0;
-  bufferViewProps.mySize = VECTOR_BYTESIZE(materialDatas);
-  myMaterialBuffer = RenderCore::CreateBufferView(bufferProps, bufferViewProps, "Rt material buffer", materialDatas.data());
+  myRtScene.myMaterialData = RenderCore::CreateBufferView(bufferProps, bufferViewProps, "Rt material buffer", materialDatas.data());
 
-  bufferProps.myElementSizeBytes = sizeof(PerInstanceData);
-  bufferProps.myNumElements = perInstanceDatas.size();
-  bufferViewProps.mySize = VECTOR_BYTESIZE(perInstanceDatas);
-  myPerInstanceData = RenderCore::CreateBufferView(bufferProps, bufferViewProps, "Rt per instance data", perInstanceDatas.data());
+  myRtScene.myTLAS = RenderCore::CreateRtTopLevelAccelerationStructure(instanceDatas.data(), (uint) instanceDatas.size(), 0, "TLAS");
+
+  RtPipelineStateProperties rtPipelineProps;
+  const uint raygenIdx = rtPipelineProps.AddRayGenShader("resources/shaders/raytracing/RayGen.hlsl", "RayGen");
+  const uint missIdx = rtPipelineProps.AddMissShader("resources/shaders/raytracing/Miss.hlsl", "Miss");
+  const uint hitIdx = rtPipelineProps.AddHitGroup(L"HitGroup0", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr, nullptr, nullptr, nullptr, "resources/shaders/raytracing/Hit.hlsl", "ClosestHit");
+  rtPipelineProps.SetMaxAttributeSize(32u);
+  rtPipelineProps.SetMaxPayloadSize(128u);
+  rtPipelineProps.SetMaxRecursionDepth(2u);
+  myRtScene.myRtPso = RenderCore::CreateRtPipelineState(rtPipelineProps);
+
+  RtShaderBindingTableProperties sbtProps;
+  sbtProps.myNumRaygenShaderRecords = 1;
+  sbtProps.myNumMissShaderRecords = 5;
+  sbtProps.myNumHitShaderRecords = 5;
+  myRtScene.mySBT = RenderCore::CreateRtShaderTable(sbtProps);
+  myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetRayGenShaderIdentifier(raygenIdx));
+  myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetMissShaderIdentifier(missIdx));
+  myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetHitShaderIdentifier(hitIdx));
 }
 
 PathTracer::~PathTracer()
@@ -300,14 +385,12 @@ void PathTracer::RenderRT()
 
   CommandList* ctx = RenderCore::BeginCommandList(CommandListType::Graphics);
   
-  ctx->SetRaytracingPipelineState(myRtPso.get());
-  ctx->PrepareResourceShaderAccess(rtOutputTex.myWriteView);
-  ctx->PrepareResourceShaderAccess(myTLAS->GetBufferRead());
-
+  ctx->SetRaytracingPipelineState(myRtScene.myRtPso.get());
+  
   eastl::fixed_vector<glm::float3, 4> nearPlaneVertices;
   myCamera.GetVerticesOnNearPlane(nearPlaneVertices);
 
-  struct RayGenConsts
+  struct RtConsts
   {
     glm::float3 myNearPlaneCorner;
     bool myIsBGR;
@@ -319,22 +402,32 @@ void PathTracer::RenderRT()
     uint myAsIndex;
 
     glm::float3 myCameraPos;
-  } rayGenConsts;
+    uint myInstanceDataBufferIndex;
 
-  rayGenConsts.myNearPlaneCorner = nearPlaneVertices[0];
-  rayGenConsts.myIsBGR = false;
-  rayGenConsts.myXAxis = nearPlaneVertices[1] - nearPlaneVertices[0];
-  rayGenConsts.myYAxis = nearPlaneVertices[3] - nearPlaneVertices[0];
-  rayGenConsts.myOutTexIndex = rtOutputTex.myWriteView->GetGlobalDescriptorIndex();
-  rayGenConsts.myAsIndex = myTLAS->GetBufferRead()->GetGlobalDescriptorIndex();
-  rayGenConsts.myCameraPos = myCamera.myPosition;
-  ctx->BindConstantBuffer(&rayGenConsts, sizeof(rayGenConsts), 0);
+    uint myMaterialDataBufferIndex;
+  } rtConsts;
+
+  rtConsts.myNearPlaneCorner = nearPlaneVertices[0];
+  rtConsts.myIsBGR = myRenderOutput->GetBackbuffer()->GetProperties().myFormat == DataFormat::BGRA_8;
+  rtConsts.myXAxis = nearPlaneVertices[1] - nearPlaneVertices[0];
+  rtConsts.myYAxis = nearPlaneVertices[3] - nearPlaneVertices[0];
+  rtConsts.myOutTexIndex = rtOutputTex.myWriteView->GetGlobalDescriptorIndex();
+  rtConsts.myAsIndex = myRtScene.myTLAS->GetBufferRead()->GetGlobalDescriptorIndex();
+  rtConsts.myCameraPos = myCamera.myPosition;
+  rtConsts.myInstanceDataBufferIndex = myRtScene.myInstanceData->GetGlobalDescriptorIndex();
+  rtConsts.myMaterialDataBufferIndex = myRtScene.myMaterialData->GetGlobalDescriptorIndex();
+  ctx->BindConstantBuffer(&rtConsts, sizeof(rtConsts), 0);
+
+  ctx->PrepareResourceShaderAccess(rtOutputTex.myWriteView);
+  ctx->PrepareResourceShaderAccess(myRtScene.myTLAS->GetBufferRead());
+  ctx->PrepareResourceShaderAccess(myRtScene.myInstanceData.get());
+  ctx->PrepareResourceShaderAccess(myRtScene.myMaterialData.get());
 
   GPU_BEGIN_PROFILE(ctx, "RT", 0u);
   DispatchRaysDesc desc;
-  desc.myRayGenShaderTableRange = mySBT->GetRayGenRange();
-  desc.myMissShaderTableRange = mySBT->GetMissRange();
-  desc.myHitGroupTableRange = mySBT->GetHitRange();
+  desc.myRayGenShaderTableRange = myRtScene.mySBT->GetRayGenRange();
+  desc.myMissShaderTableRange = myRtScene.mySBT->GetMissRange();
+  desc.myHitGroupTableRange = myRtScene.mySBT->GetHitRange();
   desc.myWidth = texProps.myTextureProperties.myWidth;
   desc.myHeight = texProps.myTextureProperties.myHeight;
   desc.myDepth = 1;

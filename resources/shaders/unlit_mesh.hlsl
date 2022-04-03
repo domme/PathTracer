@@ -17,7 +17,7 @@ struct VS_OUT
     {
       float3 position : POSITION;
       float3 normal : NORMAL;
-      float4 color : COLOR0;
+      float2 texcoord : TEXCOORD0;
     };
     
     VS_OUT main(VS_IN v)
