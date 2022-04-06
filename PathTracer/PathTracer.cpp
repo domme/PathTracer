@@ -2,7 +2,6 @@
 
 #include "imgui.h"
 #include "imgui_impl_fancy.h"
-#include "Common/Fancy.h"
 #include "Common/Ptr.h"
 #include "Common/StringUtil.h"
 #include "Common/Window.h"
@@ -47,7 +46,7 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   : Application(anInstanceHandle, someArguments, aNumArguments, aName, "../../../../", someRenderProperties, someWindowParams)
   , myImGuiContext(ImGui::CreateContext())
 {
-  ImGuiRendering::Init(myRuntime->GetRenderOutput(), myRuntime);
+  ImGuiRendering::Init(myRenderOutput);
 
   UpdateDepthbuffer();
 
@@ -67,7 +66,7 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 
   InitRtScene(sceneData);
 
-  myScene = eastl::make_shared<Scene>(sceneData);
+  myScene = eastl::make_shared<Scene>(sceneData, myAssetManager.get());
 
   myCamera.myPosition = glm::float3(1.0f, -1.0f, -1460.0f);
   myCamera.myOrientation = glm::quat_cast(glm::lookAt(glm::float3(0.0f, 0.0f, 10.0f), glm::float3(0.0f, 0.0f, 0.0f), glm::float3(0.0f, 1.0f, 0.0f)));
@@ -77,8 +76,8 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   myCamera.myFovDeg = 60.0f;
   myCamera.myNear = 1.0f;
   myCamera.myFar = 10000.0f;
-  myCamera.myWidth = myWindow->GetWidth();
-  myCamera.myHeight = myWindow->GetHeight();
+  myCamera.myWidth = (float) myRenderOutput->GetWindow()->GetWidth();
+  myCamera.myHeight = (float) myRenderOutput->GetWindow()->GetHeight();
   myCamera.myIsOrtho = false;
 
   myCamera.UpdateView();
@@ -320,8 +319,8 @@ void PathTracer::RenderRaster()
 {
   CommandList* ctx = RenderCore::BeginCommandList(CommandListType::Graphics);
   GPU_BEGIN_PROFILE(ctx, "Render scene", 0u);
-  ctx->SetViewport(glm::uvec4(0, 0, myWindow->GetWidth(), myWindow->GetHeight()));
-  ctx->SetClipRect(glm::uvec4(0, 0, myWindow->GetWidth(), myWindow->GetHeight()));
+  ctx->SetViewport(glm::uvec4(0, 0, myRenderOutput->GetWindow()->GetWidth(), myRenderOutput->GetWindow()->GetHeight()));
+  ctx->SetClipRect(glm::uvec4(0, 0, myRenderOutput->GetWindow()->GetWidth(), myRenderOutput->GetWindow()->GetHeight()));
   ctx->ClearDepthStencilTarget(myDepthStencilDsv.get(), 1.0f, 0u, (uint)DepthStencilClearFlags::CLEAR_ALL);
   ctx->SetRenderTarget(myRenderOutput->GetBackbufferRtv(), myDepthStencilDsv.get());
 
@@ -379,8 +378,8 @@ void PathTracer::RenderRT()
   texProps.myIsShaderWritable = true;
   texProps.myIsRenderTarget = false;
   texProps.myTextureProperties.myFormat = DataFormat::RGBA_8;
-  texProps.myTextureProperties.myWidth = myWindow->GetWidth();
-  texProps.myTextureProperties.myHeight = myWindow->GetHeight();
+  texProps.myTextureProperties.myWidth = myRenderOutput->GetWindow()->GetWidth();
+  texProps.myTextureProperties.myHeight = myRenderOutput->GetWindow()->GetHeight();
   TempTextureResource rtOutputTex = RenderCore::AllocateTempTexture(texProps, 0u, "RT Test Result Texture");
 
   CommandList* ctx = RenderCore::BeginCommandList(CommandListType::Graphics);
@@ -451,8 +450,8 @@ void PathTracer::EndFrame()
 
 void PathTracer::UpdateDepthbuffer()
 {
-  uint width = myWindow->GetWidth();
-  uint height = myWindow->GetHeight();
+  uint width = myRenderOutput->GetWindow()->GetWidth();
+  uint height = myRenderOutput->GetWindow()->GetHeight();
 
   TextureProperties dsTexProps;
   dsTexProps.myDimension = GpuResourceDimension::TEXTURE_2D;

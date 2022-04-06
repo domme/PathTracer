@@ -15,7 +15,6 @@ namespace Fancy
   struct Scene;
   class ShaderPipeline;
   class Window;
-  class FancyRuntime;
   class RenderOutput;
   struct RenderPlatformProperties;
   struct WindowParameters;
