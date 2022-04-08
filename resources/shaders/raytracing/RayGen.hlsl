@@ -18,6 +18,8 @@ void RayGen()
 
   HitInfo payload;
   payload.colorAndDistance = float4(0, 0, 0, 0);
+  payload.myRecursionDepth = 0;
+  payload.myNumAoHits = 0;
 
   TraceRay( theRtAccelerationStructures[myAsIndex],
             0,
@@ -29,5 +31,4 @@ void RayGen()
             payload);
 
   theRwTextures2D[myOutTexIndex][pixel] = float4(myIsBGR ? payload.colorAndDistance.bgr : payload.colorAndDistance.rgb, 1.f);
-  
 }

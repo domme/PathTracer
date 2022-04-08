@@ -64,6 +64,15 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   const bool importSuccess = importer.Import("resources/models/Cycles.obj", vertexAttributes, sceneData);
   ASSERT(importSuccess);
 
+  // Manually add emission to the light since obj doesn't support exporting lights
+  for (const SceneMeshInstance& instance : sceneData.myInstances)
+  {
+    if (sceneData.myMeshes[instance.myMeshIndex].myDesc.myName.comparei("light") == 0)
+    {
+      sceneData.myMaterials[instance.myMaterialIndex].myParameters[(uint)MaterialParameterType::EMISSION] = glm::float4(100.0f, 100.0f, 100.0f, 0.0f);
+    }
+  }
+
   InitRtScene(sceneData);
 
   myScene = eastl::make_shared<Scene>(sceneData, myAssetManager.get());
@@ -237,6 +246,7 @@ void PathTracer::InitRtScene(const SceneData& aScene)
 
   struct MaterialData
   {
+    glm::float3 myEmission;
     uint myColor;
   };
   eastl::vector<MaterialData> materialDatas;
@@ -245,6 +255,7 @@ void PathTracer::InitRtScene(const SceneData& aScene)
   for (const MaterialDesc& mat : aScene.myMaterials)
   {
     MaterialData& matData = materialDatas.push_back();
+    matData.myEmission = mat.myParameters[(uint)MaterialParameterType::EMISSION];
     matData.myColor = MathUtil::Encode_Unorm_RGBA(mat.myParameters[(uint)MaterialParameterType::COLOR]);
   }
 
@@ -272,6 +283,26 @@ void PathTracer::InitRtScene(const SceneData& aScene)
   myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetRayGenShaderIdentifier(raygenIdx));
   myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetMissShaderIdentifier(missIdx));
   myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetHitShaderIdentifier(hitIdx));
+
+  InitSampleSequences();
+}
+
+void PathTracer::InitSampleSequences()
+{
+  uint sampleCount = 256;
+  eastl::vector<glm::float2> someSamples;
+  someSamples.reserve(sampleCount);
+
+  for (uint i = 0; i < sampleCount; ++i)
+    someSamples.push_back({ MathUtil::Halton(i, 2), MathUtil::Halton(i, 3) });
+
+  GpuBufferProperties props;
+  props.myBindFlags = (uint)GpuBufferBindFlags::SHADER_BUFFER;
+  props.myElementSizeBytes = sizeof(glm::float2);
+  props.myNumElements = sampleCount;
+  GpuBufferViewProperties viewProps;
+  viewProps.myIsRaw = true;
+  myRtScene.myHaltonSamples = RenderCore::CreateBufferView(props, viewProps, "Halton samples", someSamples.data());
 }
 
 PathTracer::~PathTracer()
@@ -404,6 +435,7 @@ void PathTracer::RenderRT()
     uint myInstanceDataBufferIndex;
 
     uint myMaterialDataBufferIndex;
+    uint mySampleBufferIndex;
   } rtConsts;
 
   rtConsts.myNearPlaneCorner = nearPlaneVertices[0];
@@ -415,12 +447,14 @@ void PathTracer::RenderRT()
   rtConsts.myCameraPos = myCamera.myPosition;
   rtConsts.myInstanceDataBufferIndex = myRtScene.myInstanceData->GetGlobalDescriptorIndex();
   rtConsts.myMaterialDataBufferIndex = myRtScene.myMaterialData->GetGlobalDescriptorIndex();
+  rtConsts.mySampleBufferIndex = myRtScene.myHaltonSamples->GetGlobalDescriptorIndex();
   ctx->BindConstantBuffer(&rtConsts, sizeof(rtConsts), 0);
 
   ctx->PrepareResourceShaderAccess(rtOutputTex.myWriteView);
   ctx->PrepareResourceShaderAccess(myRtScene.myTLAS->GetBufferRead());
   ctx->PrepareResourceShaderAccess(myRtScene.myInstanceData.get());
   ctx->PrepareResourceShaderAccess(myRtScene.myMaterialData.get());
+  ctx->PrepareResourceShaderAccess(myRtScene.myHaltonSamples.get());
 
   GPU_BEGIN_PROFILE(ctx, "RT", 0u);
   DispatchRaysDesc desc;

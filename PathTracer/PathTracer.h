@@ -35,6 +35,7 @@ struct RaytracingScene
 {
   SharedPtr<GpuBufferView> myInstanceData;
   SharedPtr<GpuBufferView> myMaterialData;
+  SharedPtr<GpuBufferView> myHaltonSamples;
   SharedPtr<RtPipelineState> myRtPso;
   SharedPtr<RtShaderBindingTable> mySBT;
 
@@ -53,6 +54,7 @@ public:
     const Fancy::WindowParameters& someWindowParams);
 
   void InitRtScene(const SceneData& aScene);
+  void InitSampleSequences();
 
   ~PathTracer() override;
   void OnWindowResized(uint aWidth, uint aHeight) override;

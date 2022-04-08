@@ -4,6 +4,8 @@
 #include "fancy/resources/shaders/GlobalResources.h"
 #include "fancy/resources/shaders/Encoding.h"
 
+static const float PI = 3.14159265f;
+
 cbuffer Constants : register(b0, Space_LocalCBuffer)
 {
   float3 myNearPlaneCorner;
@@ -19,11 +21,14 @@ cbuffer Constants : register(b0, Space_LocalCBuffer)
   uint myInstanceDataBufferIndex;
 
   uint myMaterialDataBufferIndex;
+  uint mySampleBufferIndex;
 };
 
 struct HitInfo
 {
   float4 colorAndDistance;
+  uint myRecursionDepth;
+  uint myNumAoHits;
 };
 
 struct Attributes
@@ -51,11 +56,13 @@ InstanceData LoadInstanceData(uint anInstanceId)
 
 struct MaterialDataEncoded
 {
+  float3 myEmission;
   uint myColor;
 };
 
 struct MaterialData
 {
+  float3 myEmission;
   float4 myColor;
 };
 
@@ -64,6 +71,7 @@ MaterialData LoadMaterialData(uint aMaterialIndex)
   MaterialDataEncoded enc = theBuffers[myMaterialDataBufferIndex].Load<MaterialDataEncoded>(aMaterialIndex * sizeof(MaterialDataEncoded));
   
   MaterialData data;
+  data.myEmission = enc.myEmission;
   data.myColor = Decode_Unorm_RGBA(enc.myColor);
   return data;
 };
@@ -93,6 +101,31 @@ VertexData LoadInterpolatedVertexData(uint aVertexBufferIndex, uint anIndexBuffe
   returnData.myUv = aBarycentrics.x * vertexDatas[0].myUv + aBarycentrics.y * vertexDatas[1].myUv + baryZ * vertexDatas[2].myUv;
 
   return returnData;
+}
+
+float3 GetRandomDirectionInSphere(float2 aRand01)
+{
+  float phi = aRand01.x * 2 * PI;
+  float theta = aRand01.y * PI;
+  return float3(sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi));
+}
+
+float3x3 GetCoordinateFrame(float3 aNormal)
+{
+  float3 side = abs(aNormal.x) < 0.999 ? float3(1, 0, 0) : float3(0, 0, 1);
+  float3 z = normalize(cross(-aNormal, -side));
+  float3 x = cross(z, aNormal);
+  return float3x3(x, aNormal, z);
+}
+
+float3 GetHemisphereDirection(float2 aRand01, float3 aNormal)
+{
+  float2 rand = aRand01 * 2.0 - 1.0;
+  float3 dir = float3(rand.x, 0.0, rand.y);
+  dir.y = sqrt(1.0 - dot(dir.xz, dir.xz));
+
+  float3x3 coordinateFrame = GetCoordinateFrame(aNormal);
+  return normalize(mul(dir, coordinateFrame));
 }
 
 #endif  // INC_RT_COMMON
