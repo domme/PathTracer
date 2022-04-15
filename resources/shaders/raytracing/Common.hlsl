@@ -9,7 +9,7 @@ static const float PI = 3.14159265f;
 cbuffer Constants : register(b0, Space_LocalCBuffer)
 {
   float3 myNearPlaneCorner;
-  bool myIsBGR;
+  float myAoDistance;
 
   float3 myXAxis;
   uint myOutTexIndex;
@@ -22,11 +22,14 @@ cbuffer Constants : register(b0, Space_LocalCBuffer)
 
   uint myMaterialDataBufferIndex;
   uint mySampleBufferIndex;
+  uint myFrameRandomSeed;
+  uint myNumAccumulationFrames;
 };
 
 struct HitInfo
 {
   float4 colorAndDistance;
+  uint4 myRngState;
   uint myRecursionDepth;
   uint myNumAoHits;
 };
@@ -118,9 +121,9 @@ float3x3 GetCoordinateFrame(float3 aNormal)
   return float3x3(x, aNormal, z);
 }
 
-float3 GetHemisphereDirection(float2 aRand01, float3 aNormal)
+float3 GetHemisphereDirection(float2 aRand11, float3 aNormal)
 {
-  float2 rand = aRand01 * 2.0 - 1.0;
+  float2 rand = aRand11;
   float3 dir = float3(rand.x, 0.0, rand.y);
   dir.y = sqrt(1.0 - dot(dir.xz, dir.xz));
 

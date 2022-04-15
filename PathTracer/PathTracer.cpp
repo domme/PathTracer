@@ -9,6 +9,7 @@
 #include "Debug/Profiler.h"
 #include "IO/MeshImporter.h"
 #include "Rendering/CommandList.h"
+#include "Rendering/DepthStencilState.h"
 #include "Rendering/GraphicsResources.h"
 #include "Rendering/RenderCore.h"
 #include "Rendering/RenderOutput.h"
@@ -41,6 +42,23 @@ static SharedPtr<ShaderPipeline> locLoadShader(const char* aShaderPath, const ch
   return RenderCore::CreateShaderPipeline(pipelineDesc);
 }
 
+static SharedPtr<ShaderPipeline> locLoadComputeShader(const char* aShaderPath, const char* aMainFunction = "main", const char* someDefines = nullptr)
+{
+  eastl::vector<eastl::string> defines;
+  if (someDefines)
+    StringUtil::Tokenize(someDefines, ",", defines);
+
+  ShaderPipelineDesc pipelineDesc;
+
+  ShaderDesc* shaderDesc = &pipelineDesc.myShader[(uint)ShaderStage::SHADERSTAGE_COMPUTE];
+  shaderDesc->myPath = aShaderPath;
+  shaderDesc->myMainFunction = aMainFunction;
+  for (const eastl::string& str : defines)
+    shaderDesc->myDefines.push_back(str);
+
+  return RenderCore::CreateShaderPipeline(pipelineDesc);
+}
+
 PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, uint aNumArguments, const char* aName,
   const Fancy::RenderPlatformProperties& someRenderProperties, const Fancy::WindowParameters& someWindowParams)
   : Application(anInstanceHandle, someArguments, aNumArguments, aName, "../../../../", someRenderProperties, someWindowParams)
@@ -48,10 +66,26 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 {
   ImGuiRendering::Init(myRenderOutput);
 
+  DepthStencilStateProperties dsProps;
+  dsProps.myDepthTestEnabled = false;
+  dsProps.myDepthWriteEnabled = false;
+  dsProps.myStencilEnabled = false;
+  dsProps.myStencilWriteMask = 0u;
+  myDepthTestOff = RenderCore::CreateDepthStencilState(dsProps);
+
+  RenderCore::ourOnRtPipelineStateRecompiled.Connect(this, &PathTracer::OnRtPipelineRecompiled);
+
   UpdateDepthbuffer();
+  UpdateOutputTexture();
 
   myUnlitMeshShader = locLoadShader("resources/shaders/unlit_mesh.hlsl");
   ASSERT(myUnlitMeshShader);
+
+  myTonemapCompositShader = locLoadShader("resources/shaders/tonemap_composit.hlsl");
+  ASSERT(myTonemapCompositShader);
+
+  myClearTextureShader = locLoadComputeShader("resources/shaders/clear_texture.hlsl");
+  ASSERT(myClearTextureShader);
 
   eastl::fixed_vector<VertexShaderAttributeDesc, 16> vertexAttributes = {
     { VertexAttributeSemantic::POSITION, 0, DataFormat::RGB_32F },
@@ -109,6 +143,7 @@ glm::uvec2 GetOffsetSize(const VertexInputLayoutProperties& someVertexProps, Ver
   }
 
   ASSERT(false);
+  return glm::uvec2(0, 0);
 }
 
 void PathTracer::InitRtScene(const SceneData& aScene)
@@ -307,6 +342,7 @@ void PathTracer::InitSampleSequences()
 
 PathTracer::~PathTracer()
 {
+  RenderCore::ourOnRtPipelineStateRecompiled.DetachObserver(this);
   ImGuiRendering::Shutdown();
   ImGui::DestroyContext(myImGuiContext);
   myImGuiContext = nullptr;
@@ -316,6 +352,18 @@ void PathTracer::OnWindowResized(uint aWidth, uint aHeight)
 {
   Application::OnWindowResized(aWidth, aHeight);
   UpdateDepthbuffer();
+  UpdateOutputTexture();
+  RestartAccumulation();
+}
+
+bool PathTracer::CameraHasChanged()
+{
+  for (int i = 0; i < 4; ++i)
+    for (int k = 0; k < 4; ++k)
+      if (glm::abs(myCamera.myViewProj[i][k] - myLastViewMat[i][k]) > 0.0001f)
+        return true;
+
+  return false;
 }
 
 void PathTracer::BeginFrame()
@@ -328,6 +376,19 @@ void PathTracer::Update()
 {
   Application::Update();
   ImGui::Checkbox("Render Raster", &myRenderRaster);
+
+  ImGui::ProgressBar((float)(myNumAccumulationFrames) / (float)myMaxNumAccumulationFrames, ImVec2(-1, 0), "Rendering Progress");
+
+  if (ImGui::InputInt("Accumulation Frames", &myMaxNumAccumulationFrames))
+    RestartAccumulation();
+
+  if (ImGui::DragFloat("Ao Distance", &myAoDistance))
+    RestartAccumulation();
+
+  if (CameraHasChanged())
+    RestartAccumulation();
+
+  myLastViewMat = myCamera.myViewProj;
 }
 
 void PathTracer::Render()
@@ -374,7 +435,7 @@ void PathTracer::RenderRaster()
       ctx->BindVertexBuffer(meshPart->myVertexBuffer.get());
       ctx->BindIndexBuffer(meshPart->myIndexBuffer.get(), meshPart->myIndexBuffer->GetProperties().myElementSizeBytes);
 
-      ctx->Render(meshPart->myIndexBuffer->GetProperties().myNumElements, 1u, 0, 0, 0);
+      ctx->DrawIndexedInstanced(meshPart->myIndexBuffer->GetProperties().myNumElements, 1u, 0, 0, 0);
     }
   };
 
@@ -405,81 +466,146 @@ void PathTracer::RenderRaster()
 
 void PathTracer::RenderRT()
 {
-  TextureResourceProperties texProps;
-  texProps.myIsShaderWritable = true;
-  texProps.myIsRenderTarget = false;
-  texProps.myTextureProperties.myFormat = DataFormat::RGBA_8;
-  texProps.myTextureProperties.myWidth = myRenderOutput->GetWindow()->GetWidth();
-  texProps.myTextureProperties.myHeight = myRenderOutput->GetWindow()->GetHeight();
-  TempTextureResource rtOutputTex = RenderCore::AllocateTempTexture(texProps, 0u, "RT Test Result Texture");
-
   CommandList* ctx = RenderCore::BeginCommandList(CommandListType::Graphics);
-  
-  ctx->SetRaytracingPipelineState(myRtScene.myRtPso.get());
-  
-  eastl::fixed_vector<glm::float3, 4> nearPlaneVertices;
-  myCamera.GetVerticesOnNearPlane(nearPlaneVertices);
 
-  struct RtConsts
+  uint dstTexWidth = myRtOutTextureRead->GetTexture()->GetProperties().myWidth;
+  uint dstTexHeight = myRtOutTextureRead->GetTexture()->GetProperties().myHeight;
+
+  if (myAccumulationNeedsClear)
   {
-    glm::float3 myNearPlaneCorner;
+    ctx->PrepareResourceShaderAccess(myRtOutTextureRead.get());
+
+    uint texIdx = myRtOutTextureRead->GetGlobalDescriptorIndex();
+    ctx->BindConstantBuffer(&texIdx, sizeof(texIdx), 0);
+    ctx->SetShaderPipeline(myClearTextureShader.get());
+    ctx->Dispatch(glm::ivec3(dstTexWidth, dstTexHeight, 1));
+    myAccumulationNeedsClear = false;
+    myNumAccumulationFrames = 0u;
+  }
+
+  if (myNumAccumulationFrames < myMaxNumAccumulationFrames)
+  {
+    ctx->SetRaytracingPipelineState(myRtScene.myRtPso.get());
+
+    eastl::fixed_vector<glm::float3, 4> nearPlaneVertices;
+    myCamera.GetVerticesOnNearPlane(nearPlaneVertices);
+
+    struct RtConsts
+    {
+      glm::float3 myNearPlaneCorner;
+      float myAoDistance;
+
+      glm::float3 myXAxis;
+      uint myOutTexIndex;
+
+      glm::float3 myYAxis;
+      uint myAsIndex;
+
+      glm::float3 myCameraPos;
+      uint myInstanceDataBufferIndex;
+
+      uint myMaterialDataBufferIndex;
+      uint mySampleBufferIndex;
+      uint myFrameRandomSeed;
+      uint myNumAccumulationFrames;
+    } rtConsts;
+
+    rtConsts.myNearPlaneCorner = nearPlaneVertices[0];
+    rtConsts.myAoDistance = myAoDistance;
+    rtConsts.myXAxis = nearPlaneVertices[1] - nearPlaneVertices[0];
+    rtConsts.myYAxis = nearPlaneVertices[3] - nearPlaneVertices[0];
+    rtConsts.myOutTexIndex = myRtOutTextureWrite->GetGlobalDescriptorIndex();
+    rtConsts.myAsIndex = myRtScene.myTLAS->GetBufferRead()->GetGlobalDescriptorIndex();
+    rtConsts.myCameraPos = myCamera.myPosition;
+    rtConsts.myInstanceDataBufferIndex = myRtScene.myInstanceData->GetGlobalDescriptorIndex();
+    rtConsts.myMaterialDataBufferIndex = myRtScene.myMaterialData->GetGlobalDescriptorIndex();
+    rtConsts.mySampleBufferIndex = myRtScene.myHaltonSamples->GetGlobalDescriptorIndex();
+    rtConsts.myFrameRandomSeed = (uint)Time::ourFrameIdx;
+    rtConsts.myNumAccumulationFrames = myNumAccumulationFrames++;
+    ctx->BindConstantBuffer(&rtConsts, sizeof(rtConsts), 0);
+
+    ctx->PrepareResourceShaderAccess(myRtOutTextureWrite.get());
+    ctx->PrepareResourceShaderAccess(myRtScene.myTLAS->GetBufferRead());
+    ctx->PrepareResourceShaderAccess(myRtScene.myInstanceData.get());
+    ctx->PrepareResourceShaderAccess(myRtScene.myMaterialData.get());
+    ctx->PrepareResourceShaderAccess(myRtScene.myHaltonSamples.get());
+
+    GPU_BEGIN_PROFILE(ctx, "RT", 0u);
+    DispatchRaysDesc desc;
+    desc.myRayGenShaderTableRange = myRtScene.mySBT->GetRayGenRange();
+    desc.myMissShaderTableRange = myRtScene.mySBT->GetMissRange();
+    desc.myHitGroupTableRange = myRtScene.mySBT->GetHitRange();
+    desc.myWidth = dstTexWidth;
+    desc.myHeight = dstTexHeight;
+    desc.myDepth = 1;
+    ctx->DispatchRays(desc);
+    GPU_END_PROFILE(ctx);
+
+    ctx->ResourceUAVbarrier(myRtOutTextureWrite->GetTexture());
+  }
+
+  // Tonemapping / Compositing
+  GPU_BEGIN_PROFILE(ctx, "Tonemap/Composit", 0u);
+  ctx->SetShaderPipeline(myTonemapCompositShader.get());
+  ctx->SetDepthStencilState(myDepthTestOff);
+  ctx->SetCullMode(CullMode::NONE);
+  ctx->SetViewport(glm::uvec4(0, 0, myRenderOutput->GetWindow()->GetWidth(), myRenderOutput->GetWindow()->GetHeight()));
+  ctx->SetClipRect(glm::uvec4(0, 0, myRenderOutput->GetWindow()->GetWidth(), myRenderOutput->GetWindow()->GetHeight()));
+
+  struct TonemapConsts
+  {
     bool myIsBGR;
+    uint mySrcTextureIdx;
+  } tonemapConsts;
+  tonemapConsts.myIsBGR = myRenderOutput->GetBackbuffer()->GetProperties().myFormat == DataFormat::BGRA_8;
+  tonemapConsts.mySrcTextureIdx = myRtOutTextureRead->GetGlobalDescriptorIndex();
+  ctx->BindConstantBuffer(&tonemapConsts, sizeof(tonemapConsts), 0);
+  ctx->PrepareResourceShaderAccess(myRtOutTextureRead.get());
 
-    glm::float3 myXAxis;
-    uint myOutTexIndex;
+  glm::float2 fsTriangleVerts[] = {
+    { -2.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 2.0f }
+  };
+  ctx->BindVertexBuffer(fsTriangleVerts, sizeof(fsTriangleVerts));
+  ctx->SetRenderTarget(myRenderOutput->GetBackbufferRtv(), nullptr);
 
-    glm::float3 myYAxis;
-    uint myAsIndex;
-
-    glm::float3 myCameraPos;
-    uint myInstanceDataBufferIndex;
-
-    uint myMaterialDataBufferIndex;
-    uint mySampleBufferIndex;
-  } rtConsts;
-
-  rtConsts.myNearPlaneCorner = nearPlaneVertices[0];
-  rtConsts.myIsBGR = myRenderOutput->GetBackbuffer()->GetProperties().myFormat == DataFormat::BGRA_8;
-  rtConsts.myXAxis = nearPlaneVertices[1] - nearPlaneVertices[0];
-  rtConsts.myYAxis = nearPlaneVertices[3] - nearPlaneVertices[0];
-  rtConsts.myOutTexIndex = rtOutputTex.myWriteView->GetGlobalDescriptorIndex();
-  rtConsts.myAsIndex = myRtScene.myTLAS->GetBufferRead()->GetGlobalDescriptorIndex();
-  rtConsts.myCameraPos = myCamera.myPosition;
-  rtConsts.myInstanceDataBufferIndex = myRtScene.myInstanceData->GetGlobalDescriptorIndex();
-  rtConsts.myMaterialDataBufferIndex = myRtScene.myMaterialData->GetGlobalDescriptorIndex();
-  rtConsts.mySampleBufferIndex = myRtScene.myHaltonSamples->GetGlobalDescriptorIndex();
-  ctx->BindConstantBuffer(&rtConsts, sizeof(rtConsts), 0);
-
-  ctx->PrepareResourceShaderAccess(rtOutputTex.myWriteView);
-  ctx->PrepareResourceShaderAccess(myRtScene.myTLAS->GetBufferRead());
-  ctx->PrepareResourceShaderAccess(myRtScene.myInstanceData.get());
-  ctx->PrepareResourceShaderAccess(myRtScene.myMaterialData.get());
-  ctx->PrepareResourceShaderAccess(myRtScene.myHaltonSamples.get());
-
-  GPU_BEGIN_PROFILE(ctx, "RT", 0u);
-  DispatchRaysDesc desc;
-  desc.myRayGenShaderTableRange = myRtScene.mySBT->GetRayGenRange();
-  desc.myMissShaderTableRange = myRtScene.mySBT->GetMissRange();
-  desc.myHitGroupTableRange = myRtScene.mySBT->GetHitRange();
-  desc.myWidth = texProps.myTextureProperties.myWidth;
-  desc.myHeight = texProps.myTextureProperties.myHeight;
-  desc.myDepth = 1;
-  ctx->DispatchRays(desc);
+  ctx->DrawInstanced(3, 1, 0, 0);
   GPU_END_PROFILE(ctx);
-
-  ctx->ResourceUAVbarrier(rtOutputTex.myTexture);
-  SubresourceLocation subresourceLoc;
-  TextureRegion region = { glm::uvec3(0), glm::uvec3(texProps.myTextureProperties.myWidth, texProps.myTextureProperties.myHeight, 1u) };
-
-  Texture* backbuffer = myRenderOutput->GetBackbuffer();
-  ctx->CopyTexture(backbuffer, subresourceLoc, region, rtOutputTex.myTexture, subresourceLoc, region);
-
+  
   RenderCore::ExecuteAndFreeCommandList(ctx, SyncMode::BLOCKING);
 }
 
 void PathTracer::EndFrame()
 {
   Application::EndFrame();
+}
+
+void PathTracer::OnRtPipelineRecompiled(const RtPipelineState* aRtPipeline)
+{
+  RestartAccumulation();
+}
+
+void PathTracer::UpdateOutputTexture()
+{
+  uint width = myRenderOutput->GetWindow()->GetWidth();
+  uint height = myRenderOutput->GetWindow()->GetHeight();
+
+  TextureProperties props;
+  props.myDimension = GpuResourceDimension::TEXTURE_2D;
+  props.myFormat = DataFormat::RGBA_16F;
+  props.myIsShaderWritable = true;
+  props.myWidth = width;
+  props.myHeight = height;
+  props.myNumMipLevels = 1u;
+  SharedPtr<Texture> texture = RenderCore::CreateTexture(props, "Light output texture");
+  ASSERT(texture);
+
+  TextureViewProperties viewProps;
+  myRtOutTextureRead = RenderCore::CreateTextureView(texture, viewProps, "Light output texture read");
+  ASSERT(myRtOutTextureRead);
+
+  viewProps.myIsShaderWritable = true;
+  myRtOutTextureWrite = RenderCore::CreateTextureView(texture, viewProps, "Light output texture write");
+  ASSERT(myRtOutTextureWrite);
 }
 
 void PathTracer::UpdateDepthbuffer()
@@ -509,4 +635,9 @@ void PathTracer::UpdateDepthbuffer()
   ASSERT(myDepthStencilDsv != nullptr);
 }
 
+void PathTracer::RestartAccumulation()
+{
+  myNumAccumulationFrames = 0u;
+  myAccumulationNeedsClear = true;
+}
 

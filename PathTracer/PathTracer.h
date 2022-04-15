@@ -7,6 +7,7 @@
 
 namespace Fancy
 {
+  class DepthStencilState;
   class GpuBufferView;
   struct SceneData;
   class RtShaderBindingTable;
@@ -64,20 +65,35 @@ public:
   void EndFrame() override;
 
 private:
+  void OnRtPipelineRecompiled(const RtPipelineState* aRtPipeline);
+  void UpdateOutputTexture();
   void UpdateDepthbuffer();
+  void RestartAccumulation();
+  bool CameraHasChanged();
 
   void RenderRaster();
   void RenderRT();
 
-  Fancy::SharedPtr<Fancy::Scene> myScene;
-  Fancy::SharedPtr<Fancy::ShaderPipeline> myUnlitMeshShader;
+  SharedPtr<Scene> myScene;
+  SharedPtr<ShaderPipeline> myUnlitMeshShader;
+  SharedPtr<ShaderPipeline> myTonemapCompositShader;
+  SharedPtr<ShaderPipeline> myClearTextureShader;
 
   RaytracingScene myRtScene;
   
-  SharedPtr<TextureView> myRtOutTextureRW;
+  SharedPtr<TextureView> myRtOutTextureWrite;
+  SharedPtr<TextureView> myRtOutTextureRead;
   SharedPtr<TextureView> myDepthStencilDsv;
+
+  SharedPtr<DepthStencilState> myDepthTestOff;
+
+  float myAoDistance = 50.0f;
+  uint myNumAccumulationFrames = 0u;
+  bool myAccumulationNeedsClear = true;
+  glm::float4x4 myLastViewMat;
   
   ImGuiContext* myImGuiContext = nullptr;
   bool myRenderRaster = false;
+  int myMaxNumAccumulationFrames = 200;
 };
 
