@@ -5,6 +5,8 @@
 #include "Common/Application.h"
 #include "Common/Ptr.h"
 
+class Sky;
+
 namespace Fancy
 {
   class DepthStencilState;
@@ -54,6 +56,7 @@ public:
     const Fancy::RenderPlatformProperties& someRenderProperties,
     const Fancy::WindowParameters& someWindowParams);
 
+  void InitSky();
   void InitRtScene(const SceneData& aScene);
   void InitSampleSequences();
 
@@ -71,9 +74,11 @@ private:
   void RestartAccumulation();
   bool CameraHasChanged();
 
+  void ComputeSky();
   void RenderRaster();
   void RenderRT();
 
+  SharedPtr<Sky> mySky;
   SharedPtr<Scene> myScene;
   SharedPtr<ShaderPipeline> myUnlitMeshShader;
   SharedPtr<ShaderPipeline> myTonemapCompositShader;
@@ -84,7 +89,6 @@ private:
   SharedPtr<TextureView> myRtOutTextureWrite;
   SharedPtr<TextureView> myRtOutTextureRead;
   SharedPtr<TextureView> myDepthStencilDsv;
-
   SharedPtr<DepthStencilState> myDepthTestOff;
 
   float myAoDistance = 50.0f;
@@ -93,7 +97,7 @@ private:
   glm::float4x4 myLastViewMat;
   
   ImGuiContext* myImGuiContext = nullptr;
-  bool myRenderRaster = false;
+  bool myRenderRaster = true;
   int myMaxNumAccumulationFrames = 200;
 };
 

@@ -3,8 +3,7 @@
 
 #include "fancy/resources/shaders/GlobalResources.h"
 #include "fancy/resources/shaders/Encoding.h"
-
-static const float PI = 3.14159265f;
+#include "fancy/resources/shaders/common_types.h"
 
 cbuffer Constants : register(b0, Space_LocalCBuffer)
 {

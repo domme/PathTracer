@@ -2,6 +2,7 @@
 
 #include "imgui.h"
 #include "imgui_impl_fancy.h"
+#include "Sky.h"
 #include "Common/Ptr.h"
 #include "Common/StringUtil.h"
 #include "Common/Window.h"
@@ -18,46 +19,6 @@
 #include "Rendering/Texture.h"
 
 using namespace Fancy;
-
-static SharedPtr<ShaderPipeline> locLoadShader(const char* aShaderPath, const char* aMainVtxFunction = "main", const char* aMainFragmentFunction = "main", const char* someDefines = nullptr)
-{
-  eastl::vector<eastl::string> defines;
-  if (someDefines)
-    StringUtil::Tokenize(someDefines, ",", defines);
-
-  ShaderPipelineDesc pipelineDesc;
-
-  ShaderDesc* shaderDesc = &pipelineDesc.myShader[(uint)ShaderStage::SHADERSTAGE_VERTEX];
-  shaderDesc->myPath = aShaderPath;
-  shaderDesc->myMainFunction = aMainVtxFunction;
-  for (const eastl::string& str : defines)
-    shaderDesc->myDefines.push_back(str);
-
-  shaderDesc = &pipelineDesc.myShader[(uint)ShaderStage::SHADERSTAGE_FRAGMENT];
-  shaderDesc->myPath = aShaderPath;
-  shaderDesc->myMainFunction = aMainFragmentFunction;
-  for (const eastl::string& str : defines)
-    shaderDesc->myDefines.push_back(str);
-
-  return RenderCore::CreateShaderPipeline(pipelineDesc);
-}
-
-static SharedPtr<ShaderPipeline> locLoadComputeShader(const char* aShaderPath, const char* aMainFunction = "main", const char* someDefines = nullptr)
-{
-  eastl::vector<eastl::string> defines;
-  if (someDefines)
-    StringUtil::Tokenize(someDefines, ",", defines);
-
-  ShaderPipelineDesc pipelineDesc;
-
-  ShaderDesc* shaderDesc = &pipelineDesc.myShader[(uint)ShaderStage::SHADERSTAGE_COMPUTE];
-  shaderDesc->myPath = aShaderPath;
-  shaderDesc->myMainFunction = aMainFunction;
-  for (const eastl::string& str : defines)
-    shaderDesc->myDefines.push_back(str);
-
-  return RenderCore::CreateShaderPipeline(pipelineDesc);
-}
 
 PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, uint aNumArguments, const char* aName,
   const Fancy::RenderPlatformProperties& someRenderProperties, const Fancy::WindowParameters& someWindowParams)
@@ -78,13 +39,13 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   UpdateDepthbuffer();
   UpdateOutputTexture();
 
-  myUnlitMeshShader = locLoadShader("resources/shaders/unlit_mesh.hlsl");
+  myUnlitMeshShader = RenderCore::CreateVertexPixelShaderPipeline("resources/shaders/unlit_mesh.hlsl");
   ASSERT(myUnlitMeshShader);
 
-  myTonemapCompositShader = locLoadShader("resources/shaders/tonemap_composit.hlsl");
+  myTonemapCompositShader = RenderCore::CreateVertexPixelShaderPipeline("resources/shaders/tonemap_composit.hlsl");
   ASSERT(myTonemapCompositShader);
 
-  myClearTextureShader = locLoadComputeShader("resources/shaders/clear_texture.hlsl");
+  myClearTextureShader = RenderCore::CreateComputeShaderPipeline("resources/shaders/clear_texture.hlsl");
   ASSERT(myClearTextureShader);
 
   eastl::fixed_vector<VertexShaderAttributeDesc, 16> vertexAttributes = {
@@ -125,9 +86,15 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 
   myCamera.UpdateView();
   myCamera.UpdateProjection();
+
+  InitSky();
 }
 
-// void AppendRtTriangleData(const MeshPartData& aMeshPart, )
+void PathTracer::InitSky()
+{
+  SkyParameters skyParams;
+  mySky.reset(new Sky(skyParams, myCamera));
+}
 
 glm::uvec2 GetOffsetSize(const VertexInputLayoutProperties& someVertexProps, VertexAttributeSemantic aSemantic, uint aSemanticIndex)
 {
@@ -388,6 +355,8 @@ void PathTracer::Update()
   if (CameraHasChanged())
     RestartAccumulation();
 
+  mySky->UpdateImgui();
+
   myLastViewMat = myCamera.myViewProj;
 }
 
@@ -395,6 +364,8 @@ void PathTracer::Render()
 {
   Application::Render();
 
+  ComputeSky();
+  
   if (myRenderRaster)
   {
     RenderRaster();
@@ -405,6 +376,16 @@ void PathTracer::Render()
   }
 
   ImGui::Render();
+}
+
+void PathTracer::ComputeSky()
+{
+  CommandList* ctx = RenderCore::BeginCommandList(CommandListType::Graphics);
+  GPU_BEGIN_PROFILE(ctx, "Compute Transmission LUT", 0u);
+  mySky->ComputeTransmissionLut(ctx);
+  GPU_END_PROFILE(ctx);
+
+  RenderCore::ExecuteAndFreeCommandList(ctx);
 }
 
 void PathTracer::RenderRaster()
