@@ -97,7 +97,7 @@ private:
   glm::float4x4 myLastViewMat;
   
   ImGuiContext* myImGuiContext = nullptr;
-  bool myRenderRaster = true;
-  int myMaxNumAccumulationFrames = 200;
+  bool myRenderRaster = false;
+  int myMaxNumAccumulationFrames = 50;
 };
 

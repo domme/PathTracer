@@ -454,12 +454,13 @@ void PathTracer::RenderRT()
 
   if (myAccumulationNeedsClear)
   {
-    ctx->PrepareResourceShaderAccess(myRtOutTextureRead.get());
+    ctx->PrepareResourceShaderAccess(myRtOutTextureWrite.get());
 
-    uint texIdx = myRtOutTextureRead->GetGlobalDescriptorIndex();
+    uint texIdx = myRtOutTextureWrite->GetGlobalDescriptorIndex();
     ctx->BindConstantBuffer(&texIdx, sizeof(texIdx), 0);
     ctx->SetShaderPipeline(myClearTextureShader.get());
     ctx->Dispatch(glm::ivec3(dstTexWidth, dstTexHeight, 1));
+    ctx->ResourceUAVbarrier(myRtOutTextureWrite->GetTexture());
     myAccumulationNeedsClear = false;
     myNumAccumulationFrames = 0u;
   }
@@ -552,7 +553,7 @@ void PathTracer::RenderRT()
   ctx->DrawInstanced(3, 1, 0, 0);
   GPU_END_PROFILE(ctx);
   
-  RenderCore::ExecuteAndFreeCommandList(ctx, SyncMode::BLOCKING);
+  RenderCore::ExecuteAndFreeCommandList(ctx);
 }
 
 void PathTracer::EndFrame()

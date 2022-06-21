@@ -86,6 +86,14 @@ public:
 	AtmosphereParameters myAtmosphereParams;
 
 private:
+	struct ImGuiDebugImage
+	{
+		TextureView* myTexture = nullptr;
+		float myZoom = 1.0f;
+
+		void Update(TextureView* aTexture, const char* aName);
+	};
+
 	SharedPtr<TextureView> myTransmittanceLutRead;
 	SharedPtr<TextureView> myTransmittanceLutWrite;
 	SharedPtr<TextureView> mySkyViewLutRead;
@@ -98,5 +106,8 @@ private:
 
 	bool myImgui_windowOpen = false;
 	bool myImgui_showTransmittanceLut = false;
+	ImGuiDebugImage myImgui_TransmittanceLutImg;
+	ImGuiDebugImage myImgui_SkyViewLutImg;
+	
 };
 

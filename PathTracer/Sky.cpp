@@ -175,15 +175,20 @@ void Sky::UpdateImgui()
 {
 	ImGui::Begin("Sky", &myImgui_windowOpen);
 
-	ImGui::Text("Transmittance LUT");
-	ImGui::Image((ImTextureID)myTransmittanceLutRead.get()
-		, { (float) myTransmittanceLutRead->GetTexture()->GetProperties().myWidth, (float) myTransmittanceLutRead->GetTexture()->GetProperties().myHeight });
-
-	ImGui::Text("Sky-View LUT");
-	ImGui::Image((ImTextureID)mySkyViewLutRead.get()
-		, { (float)mySkyViewLutRead->GetTexture()->GetProperties().myWidth, (float)mySkyViewLutRead->GetTexture()->GetProperties().myHeight });
+	myImgui_TransmittanceLutImg.Update(myTransmittanceLutRead.get(), "Transmittance LUT");
+	myImgui_SkyViewLutImg.Update(mySkyViewLutRead.get(), "Sky-View LUT");
 
 	ImGui::End();
+}
+
+void Sky::ImGuiDebugImage::Update(TextureView* aTexture, const char* aName)
+{
+	glm::float2 size = glm::float2((float)aTexture->GetTexture()->GetProperties().myWidth, (float) aTexture->GetTexture()->GetProperties().myHeight);
+	size *= myZoom;
+	
+	ImGui::Text(aName);
+	ImGui::Image((ImTextureID)aTexture, { size.x, size.y });
+	ImGui::DragFloat("Zoom", &myZoom, 0.1f, 0.25f, 10.0f);
 }
 
 void Sky::ComputeLuts(CommandList* ctx)

@@ -56,7 +56,7 @@ SingleScatteringResult IntegrateScatteredLuminance(
 			float4 DepthBufferWorldPos = mul(gSkyInvViewProjMat, float4(ClipSpace, 1.0));
 			DepthBufferWorldPos /= DepthBufferWorldPos.w;
 
-			float tDepth = length(DepthBufferWorldPos.xyz - (WorldPos + float3(0.0, 0.0, -Atmosphere.BottomRadius))); // apply earth offset to go back to origin as top of earth mode. 
+			float tDepth = length(DepthBufferWorldPos.xyz - (WorldPos + float3(0.0, -Atmosphere.BottomRadius, 0.0))); // apply earth offset to go back to origin as top of earth mode. 
 			if (tDepth < tMax)
 			{
 				tMax = tDepth;
@@ -82,7 +82,7 @@ SingleScatteringResult IntegrateScatteredLuminance(
 	const float3 wi = SunDir;
 	const float3 wo = WorldDir;
 	float cosTheta = dot(wi, wo);
-	float MiePhaseValue = hgPhase(Atmosphere.MiePhaseG, -cosTheta);	// mnegate cosTheta because due to WorldDir being a "in" direction. 
+	float MiePhaseValue = hgPhase(Atmosphere.MiePhaseG, -cosTheta);	// negate cosTheta because due to WorldDir being a "in" direction. 
 	float RayleighPhaseValue = RayleighPhase(cosTheta);
 
 #ifdef ILLUMINANCE_IS_ONE
@@ -240,8 +240,8 @@ void ComputeTransmittanceLut(uint3 aDTid : SV_DispatchThreadID)
 	UvToLutTransmittanceParams(Atmosphere, viewHeight, viewZenithCosAngle, uv);
 
 	//  A few extra needed constants
-	float3 WorldPos = float3(0.0f, 0.0f, viewHeight);
-	float3 WorldDir = float3(0.0f, sqrt(1.0 - viewZenithCosAngle * viewZenithCosAngle), viewZenithCosAngle);
+	float3 WorldPos = float3(0.0f, viewHeight, 0.0f);
+	float3 WorldDir = float3(0.0f, viewZenithCosAngle, sqrt(1.0 - viewZenithCosAngle * viewZenithCosAngle));
 
 	const bool ground = false;
 	const float SampleCountIni = 40.0f;	// Can go a low as 10 sample but energy lost starts to be visible.
@@ -278,16 +278,16 @@ void ComputeSkyViewLut(uint3 aDTid : SV_DispatchThreadID)
 	{
 		float3 UpVector = WorldPos / viewHeight;
 		float sunZenithCosAngle = dot(UpVector, sun_direction);
-		SunDir = normalize(float3(sqrt(1.0 - sunZenithCosAngle * sunZenithCosAngle), 0.0, sunZenithCosAngle));
+		SunDir = normalize(float3(sqrt(1.0 - sunZenithCosAngle * sunZenithCosAngle), sunZenithCosAngle, 0.0));
 	}
 
-	WorldPos = float3(0.0f, 0.0f, viewHeight);
+	WorldPos = float3(0.0f, viewHeight, 0.0f);
 
 	float viewZenithSinAngle = sqrt(1 - viewZenithCosAngle * viewZenithCosAngle);
 	WorldDir = float3(
 		viewZenithSinAngle * lightViewCosAngle,
-		viewZenithSinAngle * sqrt(1.0 - lightViewCosAngle * lightViewCosAngle),
-		viewZenithCosAngle);
+		viewZenithCosAngle,
+		viewZenithSinAngle * sqrt(1.0 - lightViewCosAngle * lightViewCosAngle));
 
 	// Move to top atmospehre
 	if (!MoveToTopAtmosphere(WorldPos, WorldDir, Atmosphere.TopRadius))
