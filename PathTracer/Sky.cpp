@@ -16,6 +16,8 @@ namespace Priv_Sky
 		{
 			TRANSMITTANCE_TEXTURE_WIDTH = 256,
 			TRANSMITTANCE_TEXTURE_HEIGHT = 64,
+			SKY_VIEW_TEXTURE_WIDTH = 192,
+			SKY_VIEW_TEXTURE_HEIGHT = 108,
 			SCATTERING_TEXTURE_R_SIZE = 32,
 			SCATTERING_TEXTURE_MU_SIZE = 128,
 			SCATTERING_TEXTURE_MU_S_SIZE = 32,
@@ -45,9 +47,9 @@ namespace Priv_Sky
 		int SCATTERING_TEXTURE_NU_SIZE;
 
 		glm::float3 SKY_SPECTRAL_RADIANCE_TO_LUMINANCE;
-		float  pad3;
+		int SKY_VIEW_TEXTURE_WIDTH;
 		glm::float3 SUN_SPECTRAL_RADIANCE_TO_LUMINANCE;
-		float  pad4;
+		int SKY_VIEW_TEXTURE_HEIGHT;
 
 		//
 		// Other globals
@@ -119,8 +121,9 @@ Sky::Sky(const SkyParameters& someParams, Camera& aCamera)
 {
   Priv_Sky::SetupEarthAtmosphere(myAtmosphereParams);
 
-  myComputeTransmittanceLut = RenderCore::CreateComputeShaderPipeline("resources/shaders/sky/RenderSkyRayMarching.hlsl", "ComputeTransmittanceLut",
-    "OPTICAL_DEPTH_ONLY");
+  myComputeTransmittanceLut = RenderCore::CreateComputeShaderPipeline("resources/shaders/sky/RenderSkyRayMarching.hlsl", "ComputeTransmittanceLut", "OPTICAL_DEPTH_ONLY");
+	myComputeSkyViewLut = RenderCore::CreateComputeShaderPipeline("resources/shaders/sky/RenderSkyRayMarching.hlsl", "ComputeSkyViewLut");
+
   ASSERT(myComputeTransmittanceLut);
 
 	// Transmittance lut texture
@@ -138,6 +141,30 @@ Sky::Sky(const SkyParameters& someParams, Camera& aCamera)
 		viewProps.myIsShaderWritable = true;
 		myTransmittanceLutWrite = RenderCore::CreateTextureView(transmittanceLutTex, viewProps, "Transmittance Lut Uav");
   }
+
+	// Sky view lut texture
+  {
+		TextureProperties props;
+		props.myWidth = Priv_Sky::SkyLutConsts::SKY_VIEW_TEXTURE_WIDTH;
+		props.myHeight = Priv_Sky::SkyLutConsts::SKY_VIEW_TEXTURE_HEIGHT;
+		props.myFormat = DataFormat::RGB_11_11_10F;
+		props.myIsShaderWritable = true;
+		SharedPtr<Texture> skyViewLutTex = RenderCore::CreateTexture(props, "Sky view Lut");
+
+		TextureViewProperties viewProps;
+		mySkyViewLutRead = RenderCore::CreateTextureView(skyViewLutTex, viewProps, "Sky view Lut Srv");
+
+		viewProps.myIsShaderWritable = true;
+		mySkyViewLutWrite = RenderCore::CreateTextureView(skyViewLutTex, viewProps, "Sky view Lut Uav");
+  }
+
+	// Linear clamp sampler
+  {
+		TextureSamplerProperties samplerProps;
+		samplerProps.myMinFiltering = SamplerFilterMode::BILINEAR;
+		samplerProps.myMagFiltering = SamplerFilterMode::BILINEAR;
+		myLinearClampSampler = RenderCore::CreateTextureSampler(samplerProps);
+  }
 }
 
 Sky::~Sky()
@@ -150,17 +177,19 @@ void Sky::UpdateImgui()
 
 	ImGui::Text("Transmittance LUT");
 	ImGui::Image((ImTextureID)myTransmittanceLutRead.get()
-		, { (float) myTransmittanceLutRead->GetTexture()->GetProperties().myWidth * 4.0f, (float) myTransmittanceLutRead->GetTexture()->GetProperties().myHeight * 4.0f });
+		, { (float) myTransmittanceLutRead->GetTexture()->GetProperties().myWidth, (float) myTransmittanceLutRead->GetTexture()->GetProperties().myHeight });
+
+	ImGui::Text("Sky-View LUT");
+	ImGui::Image((ImTextureID)mySkyViewLutRead.get()
+		, { (float)mySkyViewLutRead->GetTexture()->GetProperties().myWidth, (float)mySkyViewLutRead->GetTexture()->GetProperties().myHeight });
 
 	ImGui::End();
 }
 
-void Sky::ComputeTransmissionLut(CommandList* ctx)
+void Sky::ComputeLuts(CommandList* ctx)
 {
 	using namespace Priv_Sky;
-
-	GPU_BEGIN_PROFILE(ctx, "ComputeTransmissionLut", 0u);
-
+	
 	SkyAtmosphereCbuffer atmoCbuffer = {};
 	atmoCbuffer.myAtmosphereParameters = myAtmosphereParams;
 	atmoCbuffer.TRANSMITTANCE_TEXTURE_WIDTH = SkyLutConsts::TRANSMITTANCE_TEXTURE_WIDTH;
@@ -173,6 +202,8 @@ void Sky::ComputeTransmissionLut(CommandList* ctx)
 	atmoCbuffer.SCATTERING_TEXTURE_NU_SIZE = SkyLutConsts::SCATTERING_TEXTURE_NU_SIZE;
 	atmoCbuffer.SKY_SPECTRAL_RADIANCE_TO_LUMINANCE = glm::float3(114974.916437f, 71305.954816f, 65310.548555f); // Not used if using LUTs as transfert
 	atmoCbuffer.SUN_SPECTRAL_RADIANCE_TO_LUMINANCE = glm::float3(98242.786222f, 69954.398112f, 66475.012354f);  // idem
+	atmoCbuffer.SKY_VIEW_TEXTURE_WIDTH = SkyLutConsts::SKY_VIEW_TEXTURE_WIDTH;
+	atmoCbuffer.SKY_VIEW_TEXTURE_HEIGHT = SkyLutConsts::SKY_VIEW_TEXTURE_HEIGHT;
 	atmoCbuffer.gSkyViewProjMat = myCamera.myViewProj;
 	atmoCbuffer.gSkyInvViewProjMat = glm::inverse(myCamera.myViewProj);
 	atmoCbuffer.gShadowmapViewProjMat = glm::float4x4(); // Shadow map not used at the moment
@@ -191,7 +222,30 @@ void Sky::ComputeTransmissionLut(CommandList* ctx)
 	ctx->BindConstantBuffer(&commonCBuffer, sizeof(commonCBuffer), 1);
 
 	ctx->SetShaderPipeline(myComputeTransmittanceLut.get());
-	ctx->Dispatch({ SkyLutConsts::TRANSMITTANCE_TEXTURE_WIDTH, SkyLutConsts::TRANSMITTANCE_TEXTURE_HEIGHT, 1 });
 
+	GPU_BEGIN_PROFILE(ctx, "ComputeTransmissionLut", 0u);
+	ctx->Dispatch({ SkyLutConsts::TRANSMITTANCE_TEXTURE_WIDTH, SkyLutConsts::TRANSMITTANCE_TEXTURE_HEIGHT, 1 });
+	GPU_END_PROFILE(ctx);
+
+	ctx->ResourceUAVbarrier(myTransmittanceLutWrite->GetTexture());
+
+	// Compute Sky view lut
+	ctx->BindConstantBuffer(&atmoCbuffer, sizeof(atmoCbuffer), 0);
+
+	commonCBuffer.gSunIlluminance = mySunIlluminance;
+	commonCBuffer.RayMarchMinMaxSPP = glm::float2(4.0f, 14.0f);
+	commonCBuffer.gScatteringMaxPathDepth = 4;
+	commonCBuffer.myOutTexIndex = mySkyViewLutWrite->GetGlobalDescriptorIndex();
+	commonCBuffer.myTransmittanceLutTextureIndex = myTransmittanceLutRead->GetGlobalDescriptorIndex();
+	commonCBuffer.myLinearClampSamplerIndex = myLinearClampSampler->GetGlobalDescriptorIndex();
+	ctx->BindConstantBuffer(&commonCBuffer, sizeof(commonCBuffer), 1);
+	ctx->PrepareResourceShaderAccess(myTransmittanceLutRead.get());
+	ctx->PrepareResourceShaderAccess(mySkyViewLutWrite.get());
+	ctx->SetShaderPipeline(myComputeSkyViewLut.get());
+
+	GPU_BEGIN_PROFILE(ctx, "ComputeSkyViewLut", 0u);
+	ctx->Dispatch({ SkyLutConsts::SKY_VIEW_TEXTURE_WIDTH, SkyLutConsts::SKY_VIEW_TEXTURE_HEIGHT, 1 });
 	GPU_END_PROFILE(ctx);
 }
+
+

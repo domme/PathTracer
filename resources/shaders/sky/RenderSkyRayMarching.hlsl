@@ -253,3 +253,59 @@ void ComputeTransmittanceLut(uint3 aDTid : SV_DispatchThreadID)
 	// Optical depth to transmittance
 	theRwTextures2D[myOutTexIndex][aDTid.xy] = float4(transmittance, 1.0);	
 }
+
+[numthreads(8, 8, 1)]
+void ComputeSkyViewLut(uint3 aDTid : SV_DispatchThreadID)
+{
+	float2 pixPos = aDTid.xy + 0.5;
+	AtmosphereParameters Atmosphere = myAtmosphereParameters;
+
+	float3 ClipSpace = float3((pixPos / float2(SKY_VIEW_TEXTURE_WIDTH, SKY_VIEW_TEXTURE_HEIGHT)) * float2(2.0, -2.0) - float2(1.0, -1.0), 1.0);
+	float4 HPos = mul(gSkyInvViewProjMat, float4(ClipSpace, 1.0));
+
+	float3 WorldDir = normalize(HPos.xyz / HPos.w - camera);
+	float3 WorldPos = camera + float3(0, Atmosphere.BottomRadius, 0);
+
+	float2 uv = pixPos / float2(SKY_VIEW_TEXTURE_WIDTH, SKY_VIEW_TEXTURE_HEIGHT);
+
+	float viewHeight = length(WorldPos);
+
+	float viewZenithCosAngle;
+	float lightViewCosAngle;
+	UvToSkyViewLutParams(Atmosphere, viewZenithCosAngle, lightViewCosAngle, viewHeight, uv);
+
+	float3 SunDir;
+	{
+		float3 UpVector = WorldPos / viewHeight;
+		float sunZenithCosAngle = dot(UpVector, sun_direction);
+		SunDir = normalize(float3(sqrt(1.0 - sunZenithCosAngle * sunZenithCosAngle), 0.0, sunZenithCosAngle));
+	}
+
+	WorldPos = float3(0.0f, 0.0f, viewHeight);
+
+	float viewZenithSinAngle = sqrt(1 - viewZenithCosAngle * viewZenithCosAngle);
+	WorldDir = float3(
+		viewZenithSinAngle * lightViewCosAngle,
+		viewZenithSinAngle * sqrt(1.0 - lightViewCosAngle * lightViewCosAngle),
+		viewZenithCosAngle);
+
+	// Move to top atmospehre
+	if (!MoveToTopAtmosphere(WorldPos, WorldDir, Atmosphere.TopRadius))
+	{
+		// Ray is not intersecting the atmosphere
+		theRwTextures2D[myOutTexIndex][aDTid.xy] = float4(0.0, 0.0, 0.0, 1.0);
+	}
+	else
+	{
+		const bool ground = false;
+		const float SampleCountIni = 30;
+		const float DepthBufferValue = -1.0;
+		const bool VariableSampleCount = true;
+		const bool MieRayPhase = true;
+		SingleScatteringResult ss = IntegrateScatteredLuminance(pixPos, WorldPos, WorldDir, SunDir, Atmosphere, ground, SampleCountIni, DepthBufferValue, VariableSampleCount, MieRayPhase);
+
+		float3 L = ss.L;
+
+		theRwTextures2D[myOutTexIndex][aDTid.xy] = float4(L * 10, 1.0);
+	}
+}

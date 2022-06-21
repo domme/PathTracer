@@ -74,6 +74,9 @@ MediumSampleRGB sampleMediumRGB(in float3 WorldPos, in AtmosphereParameters Atmo
 	return s;
 }
 
+float fromUnitToSubUvs(float u, float resolution) { return (u + 0.5f / resolution) * (resolution / (resolution + 1.0f)); }
+float fromSubUvsToUnit(float u, float resolution) { return (u - 0.5f / resolution) * (resolution / (resolution - 1.0f)); }
+
 ////////////////////////////////////////////////////////////
 // Sampling functions
 ////////////////////////////////////////////////////////////
@@ -151,5 +154,57 @@ void UvToLutTransmittanceParams(AtmosphereParameters Atmosphere, out float viewH
 	viewZenithCosAngle = d == 0.0 ? 1.0f : (H * H - rho * rho - d * d) / (2.0 * viewHeight * d);
 	viewZenithCosAngle = clamp(viewZenithCosAngle, -1.0, 1.0);
 }
+
+void UvToSkyViewLutParams(AtmosphereParameters Atmosphere, out float viewZenithCosAngle, out float lightViewCosAngle, in float viewHeight, in float2 uv)
+{
+	// Constrain uvs to valid sub texel range (avoid zenith derivative issue making LUT usage visible)
+	uv = float2(fromSubUvsToUnit(uv.x, SKY_VIEW_TEXTURE_WIDTH), fromSubUvsToUnit(uv.y, SKY_VIEW_TEXTURE_HEIGHT));
+
+	float Vhorizon = sqrt(viewHeight * viewHeight - Atmosphere.BottomRadius * Atmosphere.BottomRadius);
+	float CosBeta = Vhorizon / viewHeight;				// GroundToHorizonCos
+	float Beta = acos(CosBeta);
+	float ZenithHorizonAngle = PI - Beta;
+
+	if (uv.y < 0.5f)
+	{
+		float coord = 2.0*uv.y;
+		coord = 1.0 - coord;
+		coord *= coord;  // Non linear sky view lut
+		coord = 1.0 - coord;
+		viewZenithCosAngle = cos(ZenithHorizonAngle * coord);
+	}
+	else
+	{
+		float coord = uv.y*2.0 - 1.0;
+		coord *= coord;  // non linear sky view lut
+		viewZenithCosAngle = cos(ZenithHorizonAngle + Beta * coord);
+	}
+
+	float coord = uv.x;
+	coord *= coord;
+	lightViewCosAngle = -(coord*2.0 - 1.0);
+}
+
+bool MoveToTopAtmosphere(inout float3 WorldPos, in float3 WorldDir, in float AtmosphereTopRadius)
+{
+	float viewHeight = length(WorldPos);
+	if (viewHeight > AtmosphereTopRadius)
+	{
+		float tTop = raySphereIntersectNearest(WorldPos, WorldDir, float3(0.0f, 0.0f, 0.0f), AtmosphereTopRadius);
+		if (tTop >= 0.0f)
+		{
+			float3 UpVector = WorldPos / viewHeight;
+			float3 UpOffset = UpVector * -PLANET_RADIUS_OFFSET;
+			WorldPos = WorldPos + WorldDir * tTop + UpOffset;
+		}
+		else
+		{
+			// Ray is not intersecting the atmosphere
+			return false;
+		}
+	}
+	return true; // ok to start tracing
+}
+
 
 #endif

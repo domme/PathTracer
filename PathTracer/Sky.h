@@ -22,6 +22,7 @@ namespace Fancy
   struct WindowParameters;
   class TextureView;
   class Texture;
+	class TextureSampler;
 }
 
 struct AtmosphereParameters
@@ -77,17 +78,21 @@ public:
 
 	void UpdateImgui();
 
-  void ComputeTransmissionLut(CommandList* ctx);
+  void ComputeLuts(CommandList* ctx);
 	
 	float myMultiScatteringFactor = 0.0f;
-	glm::float3 mySunDir = glm::float3(0, -1, 0);
+	glm::float3 mySunDir = glm::float3(0, 1, 0);
 	glm::float3 mySunIlluminance = glm::float3(1.0f, 1.0f, 1.0f);
 	AtmosphereParameters myAtmosphereParams;
 
 private:
 	SharedPtr<TextureView> myTransmittanceLutRead;
 	SharedPtr<TextureView> myTransmittanceLutWrite;
+	SharedPtr<TextureView> mySkyViewLutRead;
+	SharedPtr<TextureView> mySkyViewLutWrite;
 	SharedPtr<ShaderPipeline> myComputeTransmittanceLut;
+	SharedPtr<ShaderPipeline> myComputeSkyViewLut;
+	SharedPtr<TextureSampler> myLinearClampSampler;
 	Camera& myCamera;
 	SkyParameters myParams;
 

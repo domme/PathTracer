@@ -381,8 +381,8 @@ void PathTracer::Render()
 void PathTracer::ComputeSky()
 {
   CommandList* ctx = RenderCore::BeginCommandList(CommandListType::Graphics);
-  GPU_BEGIN_PROFILE(ctx, "Compute Transmission LUT", 0u);
-  mySky->ComputeTransmissionLut(ctx);
+  GPU_BEGIN_PROFILE(ctx, "Compute Sky", 0u);
+  mySky->ComputeLuts(ctx);
   GPU_END_PROFILE(ctx);
 
   RenderCore::ExecuteAndFreeCommandList(ctx);
