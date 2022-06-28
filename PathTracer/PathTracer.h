@@ -23,6 +23,7 @@ namespace Fancy
   struct WindowParameters;
   class TextureView;
   class Texture;
+  class CommandList;
 }
 
 using namespace Fancy;
@@ -74,9 +75,10 @@ private:
   void RestartAccumulation();
   bool CameraHasChanged();
 
-  void ComputeSky();
-  void RenderRaster();
-  void RenderRT();
+  void ComputeSky(CommandList* ctx);
+  void RenderRaster(CommandList* ctx);
+  void RenderRT(CommandList* ctx);
+  void TonemapComposit(CommandList* ctx);
 
   SharedPtr<Sky> mySky;
   SharedPtr<Scene> myScene;
@@ -85,9 +87,10 @@ private:
   SharedPtr<ShaderPipeline> myClearTextureShader;
 
   RaytracingScene myRtScene;
-  
-  SharedPtr<TextureView> myRtOutTextureWrite;
-  SharedPtr<TextureView> myRtOutTextureRead;
+
+  SharedPtr<TextureView> myHdrLightTexRtv;
+  SharedPtr<TextureView> myHdrLightTexWrite;
+  SharedPtr<TextureView> myHdrLightTexRead;
   SharedPtr<TextureView> myDepthStencilDsv;
   SharedPtr<DepthStencilState> myDepthTestOff;
 

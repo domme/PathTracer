@@ -79,6 +79,7 @@ public:
 	void UpdateImgui();
 
   void ComputeLuts(CommandList* ctx);
+	void Render(CommandList* ctx, TextureView* aDestTextureWrite, TextureView* aDepthBufferRead);
 	
 	float myMultiScatteringFactor = 0.0f;
 	glm::float3 mySunDir = glm::float3(0, 1, 0);
@@ -86,6 +87,45 @@ public:
 	AtmosphereParameters myAtmosphereParams;
 
 private:
+	struct SkyAtmosphereCbuffer
+	{
+		AtmosphereParameters myAtmosphereParameters;
+
+		int TRANSMITTANCE_TEXTURE_WIDTH;
+		int TRANSMITTANCE_TEXTURE_HEIGHT;
+		int IRRADIANCE_TEXTURE_WIDTH;
+		int IRRADIANCE_TEXTURE_HEIGHT;
+
+		int SCATTERING_TEXTURE_R_SIZE;
+		int SCATTERING_TEXTURE_MU_SIZE;
+		int SCATTERING_TEXTURE_MU_S_SIZE;
+		int SCATTERING_TEXTURE_NU_SIZE;
+
+		glm::float3 SKY_SPECTRAL_RADIANCE_TO_LUMINANCE;
+		int SKY_VIEW_TEXTURE_WIDTH;
+		glm::float3 SUN_SPECTRAL_RADIANCE_TO_LUMINANCE;
+		int SKY_VIEW_TEXTURE_HEIGHT;
+
+		//
+		// Other globals
+		//
+		glm::float4x4 gSkyViewProjMat;
+		glm::float4x4 gSkyInvViewProjMat;
+		glm::float4x4 gShadowmapViewProjMat;
+
+		glm::float3 camera;
+		float  pad5;
+		glm::float3 sun_direction;
+		float  pad6;
+		glm::float3 view_ray;
+		float  pad7;
+
+		float MultipleScatteringFactor;
+		float MultiScatteringLUTRes;
+		float pad9;
+		float pad10;
+	};
+
 	struct ImGuiDebugImage
 	{
 		TextureView* myTexture = nullptr;
@@ -94,13 +134,17 @@ private:
 		void Update(TextureView* aTexture, const char* aName);
 	};
 
+	SkyAtmosphereCbuffer GetSkyAtmosphereCbuffer();
+
 	SharedPtr<TextureView> myTransmittanceLutRead;
 	SharedPtr<TextureView> myTransmittanceLutWrite;
 	SharedPtr<TextureView> mySkyViewLutRead;
 	SharedPtr<TextureView> mySkyViewLutWrite;
 	SharedPtr<ShaderPipeline> myComputeTransmittanceLut;
 	SharedPtr<ShaderPipeline> myComputeSkyViewLut;
-	SharedPtr<TextureSampler> myLinearClampSampler;
+	SharedPtr<ShaderPipeline> myComputeRaymarching;
+  SharedPtr<TextureSampler> myLinearClampSampler;
+	
 	Camera& myCamera;
 	SkyParameters myParams;
 

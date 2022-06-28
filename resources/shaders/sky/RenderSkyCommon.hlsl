@@ -185,6 +185,38 @@ void UvToSkyViewLutParams(AtmosphereParameters Atmosphere, out float viewZenithC
 	lightViewCosAngle = -(coord*2.0 - 1.0);
 }
 
+void SkyViewLutParamsToUv(AtmosphereParameters Atmosphere, in bool IntersectGround, in float viewZenithCosAngle, in float lightViewCosAngle, in float viewHeight, out float2 uv)
+{
+	float Vhorizon = sqrt(viewHeight * viewHeight - Atmosphere.BottomRadius * Atmosphere.BottomRadius);
+	float CosBeta = Vhorizon / viewHeight;				// GroundToHorizonCos
+	float Beta = acos(CosBeta);
+	float ZenithHorizonAngle = PI - Beta;
+
+	if (!IntersectGround)
+	{
+		float coord = acos(viewZenithCosAngle) / ZenithHorizonAngle;
+		coord = 1.0 - coord;
+		coord = sqrt(coord);
+		coord = 1.0 - coord;
+		uv.y = coord * 0.5f;
+	}
+	else
+	{
+		float coord = (acos(viewZenithCosAngle) - ZenithHorizonAngle) / Beta;
+		coord = sqrt(coord);
+		uv.y = coord * 0.5f + 0.5f;
+	}
+
+	{
+		float coord = -lightViewCosAngle * 0.5f + 0.5f;
+		coord = sqrt(coord);
+		uv.x = coord;
+	}
+
+	// Constrain uvs to valid sub texel range (avoid zenith derivative issue making LUT usage visible)
+	uv = float2(fromUnitToSubUvs(uv.x, SKY_VIEW_TEXTURE_WIDTH), fromUnitToSubUvs(uv.y, SKY_VIEW_TEXTURE_HEIGHT));
+}
+
 bool MoveToTopAtmosphere(inout float3 WorldPos, in float3 WorldDir, in float AtmosphereTopRadius)
 {
 	float viewHeight = length(WorldPos);
@@ -206,5 +238,20 @@ bool MoveToTopAtmosphere(inout float3 WorldPos, in float3 WorldDir, in float Atm
 	return true; // ok to start tracing
 }
 
+// Sun disk
+float3 GetSunLuminance(float3 WorldPos, float3 WorldDir, float PlanetRadius)
+{
+	if (dot(WorldDir, sun_direction) > cos(0.5*0.505*3.14159 / 180.0))
+	{
+		float t = raySphereIntersectNearest(WorldPos, WorldDir, float3(0.0f, 0.0f, 0.0f), PlanetRadius);
+		if (t < 0.0f) // no intersection
+		{
+			const float3 SunLuminance = 1000000.0; // arbitrary. But fine, not use when comparing the models
+			return SunLuminance;
+		}
+	}
+
+	return float3(0,0,0);
+}
 
 #endif

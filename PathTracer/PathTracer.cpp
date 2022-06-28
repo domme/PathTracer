@@ -342,7 +342,8 @@ void PathTracer::BeginFrame()
 void PathTracer::Update()
 {
   Application::Update();
-  ImGui::Checkbox("Render Raster", &myRenderRaster);
+  if (ImGui::Checkbox("Render Raster", &myRenderRaster) && !myRenderRaster)
+    RestartAccumulation();
 
   ImGui::ProgressBar((float)(myNumAccumulationFrames) / (float)myMaxNumAccumulationFrames, ImVec2(-1, 0), "Rendering Progress");
 
@@ -364,38 +365,50 @@ void PathTracer::Render()
 {
   Application::Render();
 
-  ComputeSky();
-  
-  if (myRenderRaster)
+  CommandList* ctx = RenderCore::BeginCommandList(CommandListType::Graphics);
   {
-    RenderRaster();
-  }
-  else
-  {
-    RenderRT();
-  }
+    GPU_SCOPED_PROFILER_FUNCTION(ctx, 0u);
 
+    ComputeSky(ctx);
+
+    if (myRenderRaster)
+    {
+      RenderRaster(ctx);
+    }
+    else
+    {
+      RenderRT(ctx);
+    }
+
+    TonemapComposit(ctx);
+  }
+  
+  RenderCore::ExecuteAndFreeCommandList(ctx);
+  
   ImGui::Render();
 }
 
-void PathTracer::ComputeSky()
+void PathTracer::ComputeSky(CommandList* ctx)
 {
-  CommandList* ctx = RenderCore::BeginCommandList(CommandListType::Graphics);
-  GPU_BEGIN_PROFILE(ctx, "Compute Sky", 0u);
+  GPU_SCOPED_PROFILER_FUNCTION(ctx, 0u);
+  
   mySky->ComputeLuts(ctx);
-  GPU_END_PROFILE(ctx);
-
-  RenderCore::ExecuteAndFreeCommandList(ctx);
 }
 
-void PathTracer::RenderRaster()
+void PathTracer::RenderRaster(CommandList* ctx)
 {
-  CommandList* ctx = RenderCore::BeginCommandList(CommandListType::Graphics);
-  GPU_BEGIN_PROFILE(ctx, "Render scene", 0u);
-  ctx->SetViewport(glm::uvec4(0, 0, myRenderOutput->GetWindow()->GetWidth(), myRenderOutput->GetWindow()->GetHeight()));
-  ctx->SetClipRect(glm::uvec4(0, 0, myRenderOutput->GetWindow()->GetWidth(), myRenderOutput->GetWindow()->GetHeight()));
+  GPU_SCOPED_PROFILER_FUNCTION(ctx, 0u);
+
+  uint dstTexWidth = myHdrLightTexRead->GetTexture()->GetProperties().myWidth;
+  uint dstTexHeight = myHdrLightTexRead->GetTexture()->GetProperties().myHeight;
+
+  ctx->SetViewport(glm::uvec4(0, 0, dstTexWidth, dstTexHeight));
+  ctx->SetClipRect(glm::uvec4(0, 0, dstTexWidth, dstTexHeight));
   ctx->ClearDepthStencilTarget(myDepthStencilDsv.get(), 1.0f, 0u, (uint)DepthStencilClearFlags::CLEAR_ALL);
-  ctx->SetRenderTarget(myRenderOutput->GetBackbufferRtv(), myDepthStencilDsv.get());
+  glm::float4 clearColor(0.0f);
+  ctx->ClearRenderTarget(myHdrLightTexRtv.get(), &clearColor[0]);
+
+  ctx->SetRenderTarget(myHdrLightTexRtv.get() , myDepthStencilDsv.get());
 
   ctx->SetDepthStencilState(nullptr);
   ctx->SetBlendState(nullptr);
@@ -411,9 +424,11 @@ void PathTracer::RenderRaster()
     for (SharedPtr<MeshPart>& meshPart : mesh->myParts)
     {
       const VertexInputLayout* layout = meshPart->myVertexInputLayout.get();
-      ctx->SetVertexInputLayout(layout);
-
-      ctx->BindVertexBuffer(meshPart->myVertexBuffer.get());
+      
+      const GpuBuffer* vertexBuffer = meshPart->myVertexBuffer.get();
+      uint64 offset = 0ull;
+      uint64 size = vertexBuffer->GetByteSize();
+      ctx->BindVertexBuffers(&vertexBuffer, &offset, &size, 1u, layout);
       ctx->BindIndexBuffer(meshPart->myIndexBuffer.get(), meshPart->myIndexBuffer->GetProperties().myElementSizeBytes);
 
       ctx->DrawIndexedInstanced(meshPart->myIndexBuffer->GetProperties().myNumElements, 1u, 0, 0, 0);
@@ -440,27 +455,25 @@ void PathTracer::RenderRaster()
 
     RenderMesh(mesh);
   }
-  GPU_END_PROFILE(ctx);
-
-  RenderCore::ExecuteAndFreeCommandList(ctx);
+  
 }
 
-void PathTracer::RenderRT()
+void PathTracer::RenderRT(CommandList* ctx)
 {
-  CommandList* ctx = RenderCore::BeginCommandList(CommandListType::Graphics);
+  GPU_SCOPED_PROFILER_FUNCTION(ctx, 0u);
 
-  uint dstTexWidth = myRtOutTextureRead->GetTexture()->GetProperties().myWidth;
-  uint dstTexHeight = myRtOutTextureRead->GetTexture()->GetProperties().myHeight;
+  uint dstTexWidth = myHdrLightTexRead->GetTexture()->GetProperties().myWidth;
+  uint dstTexHeight = myHdrLightTexRead->GetTexture()->GetProperties().myHeight;
 
   if (myAccumulationNeedsClear)
   {
-    ctx->PrepareResourceShaderAccess(myRtOutTextureWrite.get());
+    ctx->PrepareResourceShaderAccess(myHdrLightTexWrite.get());
 
-    uint texIdx = myRtOutTextureWrite->GetGlobalDescriptorIndex();
+    uint texIdx = myHdrLightTexWrite->GetGlobalDescriptorIndex();
     ctx->BindConstantBuffer(&texIdx, sizeof(texIdx), 0);
     ctx->SetShaderPipeline(myClearTextureShader.get());
     ctx->Dispatch(glm::ivec3(dstTexWidth, dstTexHeight, 1));
-    ctx->ResourceUAVbarrier(myRtOutTextureWrite->GetTexture());
+    ctx->ResourceUAVbarrier(myHdrLightTexWrite->GetTexture());
     myAccumulationNeedsClear = false;
     myNumAccumulationFrames = 0u;
   }
@@ -496,7 +509,7 @@ void PathTracer::RenderRT()
     rtConsts.myAoDistance = myAoDistance;
     rtConsts.myXAxis = nearPlaneVertices[1] - nearPlaneVertices[0];
     rtConsts.myYAxis = nearPlaneVertices[3] - nearPlaneVertices[0];
-    rtConsts.myOutTexIndex = myRtOutTextureWrite->GetGlobalDescriptorIndex();
+    rtConsts.myOutTexIndex = myHdrLightTexWrite->GetGlobalDescriptorIndex();
     rtConsts.myAsIndex = myRtScene.myTLAS->GetBufferRead()->GetGlobalDescriptorIndex();
     rtConsts.myCameraPos = myCamera.myPosition;
     rtConsts.myInstanceDataBufferIndex = myRtScene.myInstanceData->GetGlobalDescriptorIndex();
@@ -506,13 +519,12 @@ void PathTracer::RenderRT()
     rtConsts.myNumAccumulationFrames = myNumAccumulationFrames++;
     ctx->BindConstantBuffer(&rtConsts, sizeof(rtConsts), 0);
 
-    ctx->PrepareResourceShaderAccess(myRtOutTextureWrite.get());
+    ctx->PrepareResourceShaderAccess(myHdrLightTexWrite.get());
     ctx->PrepareResourceShaderAccess(myRtScene.myTLAS->GetBufferRead());
     ctx->PrepareResourceShaderAccess(myRtScene.myInstanceData.get());
     ctx->PrepareResourceShaderAccess(myRtScene.myMaterialData.get());
     ctx->PrepareResourceShaderAccess(myRtScene.myHaltonSamples.get());
 
-    GPU_BEGIN_PROFILE(ctx, "RT", 0u);
     DispatchRaysDesc desc;
     desc.myRayGenShaderTableRange = myRtScene.mySBT->GetRayGenRange();
     desc.myMissShaderTableRange = myRtScene.mySBT->GetMissRange();
@@ -521,13 +533,15 @@ void PathTracer::RenderRT()
     desc.myHeight = dstTexHeight;
     desc.myDepth = 1;
     ctx->DispatchRays(desc);
-    GPU_END_PROFILE(ctx);
 
-    ctx->ResourceUAVbarrier(myRtOutTextureWrite->GetTexture());
+    ctx->ResourceUAVbarrier(myHdrLightTexWrite->GetTexture());
   }
+}
 
-  // Tonemapping / Compositing
-  GPU_BEGIN_PROFILE(ctx, "Tonemap/Composit", 0u);
+void PathTracer::TonemapComposit(CommandList* ctx)
+{
+  GPU_SCOPED_PROFILER_FUNCTION(ctx, 0u);
+
   ctx->SetShaderPipeline(myTonemapCompositShader.get());
   ctx->SetDepthStencilState(myDepthTestOff);
   ctx->SetCullMode(CullMode::NONE);
@@ -539,21 +553,17 @@ void PathTracer::RenderRT()
     bool myIsBGR;
     uint mySrcTextureIdx;
   } tonemapConsts;
-  tonemapConsts.myIsBGR = myRenderOutput->GetBackbuffer()->GetProperties().myFormat == DataFormat::BGRA_8;
-  tonemapConsts.mySrcTextureIdx = myRtOutTextureRead->GetGlobalDescriptorIndex();
+  tonemapConsts.myIsBGR = myRenderOutput->GetBackbuffer()->GetProperties().myFormat == DataFormat::BGRA_8 ? 1 : 0;
+  tonemapConsts.mySrcTextureIdx = myHdrLightTexRead->GetGlobalDescriptorIndex();
   ctx->BindConstantBuffer(&tonemapConsts, sizeof(tonemapConsts), 0);
-  ctx->PrepareResourceShaderAccess(myRtOutTextureRead.get());
+  ctx->PrepareResourceShaderAccess(myHdrLightTexRead.get());
 
   glm::float2 fsTriangleVerts[] = {
     { -2.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 2.0f }
   };
   ctx->BindVertexBuffer(fsTriangleVerts, sizeof(fsTriangleVerts));
   ctx->SetRenderTarget(myRenderOutput->GetBackbufferRtv(), nullptr);
-
   ctx->DrawInstanced(3, 1, 0, 0);
-  GPU_END_PROFILE(ctx);
-  
-  RenderCore::ExecuteAndFreeCommandList(ctx);
 }
 
 void PathTracer::EndFrame()
@@ -575,6 +585,7 @@ void PathTracer::UpdateOutputTexture()
   props.myDimension = GpuResourceDimension::TEXTURE_2D;
   props.myFormat = DataFormat::RGBA_16F;
   props.myIsShaderWritable = true;
+  props.myIsRenderTarget = true;
   props.myWidth = width;
   props.myHeight = height;
   props.myNumMipLevels = 1u;
@@ -582,12 +593,17 @@ void PathTracer::UpdateOutputTexture()
   ASSERT(texture);
 
   TextureViewProperties viewProps;
-  myRtOutTextureRead = RenderCore::CreateTextureView(texture, viewProps, "Light output texture read");
-  ASSERT(myRtOutTextureRead);
+  myHdrLightTexRead = RenderCore::CreateTextureView(texture, viewProps, "Light output texture read");
+  ASSERT(myHdrLightTexRead);
 
   viewProps.myIsShaderWritable = true;
-  myRtOutTextureWrite = RenderCore::CreateTextureView(texture, viewProps, "Light output texture write");
-  ASSERT(myRtOutTextureWrite);
+  myHdrLightTexWrite = RenderCore::CreateTextureView(texture, viewProps, "Light output texture write");
+  ASSERT(myHdrLightTexWrite);
+
+  viewProps.myIsRenderTarget = true;
+  viewProps.myIsShaderWritable = false;
+  myHdrLightTexRtv = RenderCore::CreateTextureView(texture, viewProps, "Light output texture rtv");
+  ASSERT(myHdrLightTexRtv);
 }
 
 void PathTracer::UpdateDepthbuffer()

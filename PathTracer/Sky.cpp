@@ -1,4 +1,5 @@
 #include "Sky.h"
+#include "Sky.h"
 
 #include "Common/Camera.h"
 #include "Rendering/RenderCore.h"
@@ -31,61 +32,22 @@ namespace Priv_Sky
 			SCATTERING_TEXTURE_DEPTH = SCATTERING_TEXTURE_R_SIZE,
 		};
 	};
-
-	struct SkyAtmosphereCbuffer
-	{
-		AtmosphereParameters myAtmosphereParameters;
-
-		int TRANSMITTANCE_TEXTURE_WIDTH;
-		int TRANSMITTANCE_TEXTURE_HEIGHT;
-		int IRRADIANCE_TEXTURE_WIDTH;
-		int IRRADIANCE_TEXTURE_HEIGHT;
-
-		int SCATTERING_TEXTURE_R_SIZE;
-		int SCATTERING_TEXTURE_MU_SIZE;
-		int SCATTERING_TEXTURE_MU_S_SIZE;
-		int SCATTERING_TEXTURE_NU_SIZE;
-
-		glm::float3 SKY_SPECTRAL_RADIANCE_TO_LUMINANCE;
-		int SKY_VIEW_TEXTURE_WIDTH;
-		glm::float3 SUN_SPECTRAL_RADIANCE_TO_LUMINANCE;
-		int SKY_VIEW_TEXTURE_HEIGHT;
-
-		//
-		// Other globals
-		//
-		glm::float4x4 gSkyViewProjMat;
-		glm::float4x4 gSkyInvViewProjMat;
-		glm::float4x4 gShadowmapViewProjMat;
-
-		glm::float3 camera;
-		float  pad5;
-		glm::float3 sun_direction;
-		float  pad6;
-		glm::float3 view_ray;
-		float  pad7;
-
-		float MultipleScatteringFactor;
-		float MultiScatteringLUTRes;
-		float pad9;
-		float pad10;
-	};
-
+	
 	struct CommonCbuffer
 	{
     glm::float3 gSunIlluminance;
 		int gScatteringMaxPathDepth;
 
 		glm::uvec2 gResolution;
-		float gFrameTimeSec;
-		float gTimeSec;
-
     glm::float2 RayMarchMinMaxSPP;
-		uint gFrameId;
-
+		
 		uint myOutTexIndex;
 		uint myTransmittanceLutTextureIndex;
 		uint myLinearClampSamplerIndex;
+		uint myDepthBufferIndex;
+
+		uint mySkyViewLutTextureIndex;
+		uint gFrameId;
 	};
 
 	void SetupEarthAtmosphere(AtmosphereParameters& someParams)
@@ -123,8 +85,7 @@ Sky::Sky(const SkyParameters& someParams, Camera& aCamera)
 
   myComputeTransmittanceLut = RenderCore::CreateComputeShaderPipeline("resources/shaders/sky/RenderSkyRayMarching.hlsl", "ComputeTransmittanceLut", "OPTICAL_DEPTH_ONLY");
 	myComputeSkyViewLut = RenderCore::CreateComputeShaderPipeline("resources/shaders/sky/RenderSkyRayMarching.hlsl", "ComputeSkyViewLut");
-
-  ASSERT(myComputeTransmittanceLut);
+	myComputeRaymarching = RenderCore::CreateComputeShaderPipeline("resources/shaders/sky/RenderSkyRayMarching.hlsl", "ComputeRaymarching");
 
 	// Transmittance lut texture
   {
@@ -191,11 +152,11 @@ void Sky::ImGuiDebugImage::Update(TextureView* aTexture, const char* aName)
 	ImGui::DragFloat("Zoom", &myZoom, 0.1f, 0.25f, 10.0f);
 }
 
-void Sky::ComputeLuts(CommandList* ctx)
+Sky::SkyAtmosphereCbuffer Sky::GetSkyAtmosphereCbuffer()
 {
 	using namespace Priv_Sky;
-	
-	SkyAtmosphereCbuffer atmoCbuffer = {};
+
+	SkyAtmosphereCbuffer atmoCbuffer;
 	atmoCbuffer.myAtmosphereParameters = myAtmosphereParams;
 	atmoCbuffer.TRANSMITTANCE_TEXTURE_WIDTH = SkyLutConsts::TRANSMITTANCE_TEXTURE_WIDTH;
 	atmoCbuffer.TRANSMITTANCE_TEXTURE_HEIGHT = SkyLutConsts::TRANSMITTANCE_TEXTURE_HEIGHT;
@@ -217,6 +178,15 @@ void Sky::ComputeLuts(CommandList* ctx)
 	atmoCbuffer.sun_direction = mySunDir;
 	atmoCbuffer.MultipleScatteringFactor = myMultiScatteringFactor;
 	atmoCbuffer.MultiScatteringLUTRes = SkyLutConsts::MULTI_SCATTERING_LUT_RES;
+
+	return atmoCbuffer;
+}
+
+void Sky::ComputeLuts(CommandList* ctx)
+{
+	using namespace Priv_Sky;
+	
+	SkyAtmosphereCbuffer atmoCbuffer = GetSkyAtmosphereCbuffer();
 	ctx->BindConstantBuffer(&atmoCbuffer, sizeof(atmoCbuffer), 0);
 
 	CommonCbuffer commonCBuffer = {};
@@ -235,7 +205,6 @@ void Sky::ComputeLuts(CommandList* ctx)
 	ctx->ResourceUAVbarrier(myTransmittanceLutWrite->GetTexture());
 
 	// Compute Sky view lut
-	ctx->BindConstantBuffer(&atmoCbuffer, sizeof(atmoCbuffer), 0);
 
 	commonCBuffer.gSunIlluminance = mySunIlluminance;
 	commonCBuffer.RayMarchMinMaxSPP = glm::float2(4.0f, 14.0f);
@@ -251,6 +220,34 @@ void Sky::ComputeLuts(CommandList* ctx)
 	GPU_BEGIN_PROFILE(ctx, "ComputeSkyViewLut", 0u);
 	ctx->Dispatch({ SkyLutConsts::SKY_VIEW_TEXTURE_WIDTH, SkyLutConsts::SKY_VIEW_TEXTURE_HEIGHT, 1 });
 	GPU_END_PROFILE(ctx);
+
+	ctx->ResourceUAVbarrier(mySkyViewLutWrite->GetTexture());
+}
+
+void Sky::Render(CommandList* ctx, TextureView* aDestTextureWrite, TextureView* aDepthBufferRead)
+{
+	using namespace Priv_Sky;
+
+	glm::uvec2 texSize = { aDestTextureWrite->GetTexture()->GetProperties().myWidth, aDestTextureWrite->GetTexture()->GetProperties().myHeight };
+
+	SkyAtmosphereCbuffer atmoCbuffer = GetSkyAtmosphereCbuffer();
+	ctx->BindConstantBuffer(&atmoCbuffer, sizeof(atmoCbuffer), 0);
+	
+	CommonCbuffer commonCBuffer = {};
+	commonCBuffer.gSunIlluminance = mySunIlluminance;
+	commonCBuffer.gResolution = texSize;
+	commonCBuffer.myOutTexIndex = ctx->GetPrepareDescriptorIndex(aDestTextureWrite);
+	commonCBuffer.myTransmittanceLutTextureIndex = ctx->GetPrepareDescriptorIndex(myTransmittanceLutRead.get());
+	commonCBuffer.myLinearClampSamplerIndex = myLinearClampSampler->GetGlobalDescriptorIndex();
+	commonCBuffer.myDepthBufferIndex = ctx->GetPrepareDescriptorIndex(aDepthBufferRead);
+	commonCBuffer.mySkyViewLutTextureIndex = ctx->GetPrepareDescriptorIndex(mySkyViewLutRead.get());
+	ctx->BindConstantBuffer(&commonCBuffer, sizeof(commonCBuffer), 1);
+
+	GPU_BEGIN_PROFILE(ctx, "Sky Render", 0u);
+	ctx->Dispatch({ texSize.x, texSize.y, 1 });
+	GPU_END_PROFILE(ctx);
+
+	ctx->ResourceUAVbarrier(aDestTextureWrite->GetTexture());
 }
 
 

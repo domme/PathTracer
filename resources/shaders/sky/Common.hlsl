@@ -10,15 +10,15 @@ cbuffer CONSTANT_BUFFER : register(b1, Space_LocalCBuffer)
 	int gScatteringMaxPathDepth;
 
 	uint2 gResolution;
-	float gFrameTimeSec;
-	float gTimeSec;
-
 	float2 RayMarchMinMaxSPP;
-	uint gFrameId;
 
 	uint myOutTexIndex;
 	uint myTransmittanceLutTextureIndex;
 	uint myLinearClampSamplerIndex;
+	uint myDepthBufferIndex;
+
+	uint mySkyViewLutTextureIndex;
+	uint gFrameId;
 };
 
 #endif

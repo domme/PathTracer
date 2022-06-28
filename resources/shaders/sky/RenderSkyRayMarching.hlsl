@@ -309,3 +309,80 @@ void ComputeSkyViewLut(uint3 aDTid : SV_DispatchThreadID)
 		theRwTextures2D[myOutTexIndex][aDTid.xy] = float4(L * 10, 1.0);
 	}
 }
+
+[numthreads(8, 8, 1)]
+void ComputeRaymarching(uint3 aDTid : SV_DispatchThreadID)
+{
+	float4 luminance = float4(0, 0, 0, 0);
+
+	float2 pixPos = aDTid.xy + 0.5;
+	AtmosphereParameters Atmosphere = myAtmosphereParameters;
+
+	float3 ClipSpace = float3((pixPos / float2(gResolution))*float2(2.0, -2.0) - float2(1.0, -1.0), 1.0);
+	float4 HPos = mul(gSkyInvViewProjMat, float4(ClipSpace, 1.0));
+
+	float3 WorldDir = normalize(HPos.xyz / HPos.w - camera);
+	float3 WorldPos = camera + float3(0, Atmosphere.BottomRadius, 0);
+
+	float DepthBufferValue = -1.0;
+
+	float viewHeight = length(WorldPos);
+	float3 L = 0;
+
+	// DL: This part seems to handle the case where the pixel is a skybox (depthbuffer == 1). This is all we care about for our simple pathtracer for now
+
+	DepthBufferValue = theTextures2D[myDepthBufferIndex][aDTid.xy].x;
+	if (/*viewHeight < Atmosphere.TopRadius && */ DepthBufferValue == 1.0f)
+	{
+		float2 uv;
+		float3 UpVector = normalize(WorldPos);
+		float viewZenithCosAngle = dot(WorldDir, UpVector);
+
+		float3 sideVector = normalize(cross(UpVector, WorldDir));		// assumes non parallel vectors
+		float3 forwardVector = normalize(cross(sideVector, UpVector));	// aligns toward the sun light but perpendicular to up vector
+		float2 lightOnPlane = float2(dot(sun_direction, forwardVector), dot(sun_direction, sideVector));
+		lightOnPlane = normalize(lightOnPlane);
+		float lightViewCosAngle = lightOnPlane.x;
+
+		bool IntersectGround = raySphereIntersectNearest(WorldPos, WorldDir, float3(0, 0, 0), Atmosphere.BottomRadius) >= 0.0f;
+
+		SkyViewLutParamsToUv(Atmosphere, IntersectGround, viewZenithCosAngle, lightViewCosAngle, viewHeight, uv);
+
+		SamplerState linearClampSampler = theSamplers[myLinearClampSamplerIndex];
+		luminance = float4(theTextures2D[mySkyViewLutTextureIndex].SampleLevel(linearClampSampler, uv, 0).rgb  + GetSunLuminance(WorldPos, WorldDir, Atmosphere.BottomRadius), 1.0);
+
+		theRwTextures2D[myOutTexIndex][aDTid.xy] = luminance;
+	}
+
+	/*
+
+	// Move to top atmosphere as the starting point for ray marching.
+	// This is critical to be after the above to not disrupt above atmosphere tests and voxel selection.
+	if (!MoveToTopAtmosphere(WorldPos, WorldDir, Atmosphere.TopRadius))
+	{
+		// Ray is not intersecting the atmosphere		
+		output.Luminance = float4(GetSunLuminance(WorldPos, WorldDir, Atmosphere.BottomRadius), 1.0);
+		return output;
+	}
+
+	const bool ground = false;
+	const float SampleCountIni = 0.0f;
+	const bool VariableSampleCount = true;
+	const bool MieRayPhase = true;
+	SingleScatteringResult ss = IntegrateScatteredLuminance(pixPos, WorldPos, WorldDir, sun_direction, Atmosphere, ground, SampleCountIni, DepthBufferValue, VariableSampleCount, MieRayPhase);
+
+	L += ss.L;
+	float3 throughput = ss.Transmittance;
+
+#if COLORED_TRANSMITTANCE_ENABLED
+	output.Luminance = float4(L, 1.0f);
+	output.Transmittance = float4(throughput, 1.0f);
+#else
+	const float Transmittance = dot(throughput, float3(1.0f / 3.0f, 1.0f / 3.0f, 1.0f / 3.0f));
+	output.Luminance = float4(L, 1.0 - Transmittance);
+#endif
+
+	return output;
+
+	*/
+}
