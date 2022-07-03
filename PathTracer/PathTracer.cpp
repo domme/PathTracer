@@ -408,6 +408,8 @@ void PathTracer::RenderRaster(CommandList* ctx)
   glm::float4 clearColor(0.0f);
   ctx->ClearRenderTarget(myHdrLightTexRtv.get(), &clearColor[0]);
 
+  mySky->Render(ctx, myHdrLightTexWrite.get(), nullptr);
+
   ctx->SetRenderTarget(myHdrLightTexRtv.get() , myDepthStencilDsv.get());
 
   ctx->SetDepthStencilState(nullptr);

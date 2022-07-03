@@ -107,55 +107,6 @@ AtmosphereParameters GetAtmosphereParameters()
 }
 */
 
-// - r0: ray origin
-// - rd: normalized ray direction
-// - s0: sphere center
-// - sR: sphere radius
-// - Returns distance from r0 to first intersecion with sphere,
-//   or -1.0 if no intersection.
-float raySphereIntersectNearest(float3 r0, float3 rd, float3 s0, float sR)
-{
-	float a = dot(rd, rd);
-	float3 s0_r0 = r0 - s0;
-	float b = 2.0 * dot(rd, s0_r0);
-	float c = dot(s0_r0, s0_r0) - (sR * sR);
-	float delta = b * b - 4.0*a*c;
-	if (delta < 0.0 || a == 0.0)
-	{
-		return -1.0;
-	}
-	float sol0 = (-b - sqrt(delta)) / (2.0*a);
-	float sol1 = (-b + sqrt(delta)) / (2.0*a);
-	if (sol0 < 0.0 && sol1 < 0.0)
-	{
-		return -1.0;
-	}
-	if (sol0 < 0.0)
-	{
-		return max(0.0, sol1);
-	}
-	else if (sol1 < 0.0)
-	{
-		return max(0.0, sol0);
-	}
-	return max(0.0, min(sol0, sol1));
-}
 
-void LutTransmittanceParamsToUv(AtmosphereParameters Atmosphere, in float viewHeight, in float viewZenithCosAngle, out float2 uv)
-{
-	float H = sqrt(max(0.0f, Atmosphere.TopRadius * Atmosphere.TopRadius - Atmosphere.BottomRadius * Atmosphere.BottomRadius));
-	float rho = sqrt(max(0.0f, viewHeight * viewHeight - Atmosphere.BottomRadius * Atmosphere.BottomRadius));
-
-	float discriminant = viewHeight * viewHeight * (viewZenithCosAngle * viewZenithCosAngle - 1.0) + Atmosphere.TopRadius * Atmosphere.TopRadius;
-	float d = max(0.0, (-viewHeight * viewZenithCosAngle + sqrt(discriminant))); // Distance to atmosphere boundary
-
-	float d_min = Atmosphere.TopRadius - viewHeight;
-	float d_max = rho + H;
-	float x_mu = (d - d_min) / (d_max - d_min);
-	float x_r = rho / H;
-
-	uv = float2(x_mu, x_r);
-	//uv = float2(fromUnitToSubUvs(uv.x, TRANSMITTANCE_TEXTURE_WIDTH), fromUnitToSubUvs(uv.y, TRANSMITTANCE_TEXTURE_HEIGHT)); // No real impact so off
-}
 
 #endif

@@ -143,6 +143,7 @@ private:
 	SharedPtr<ShaderPipeline> myComputeTransmittanceLut;
 	SharedPtr<ShaderPipeline> myComputeSkyViewLut;
 	SharedPtr<ShaderPipeline> myComputeRaymarching;
+	SharedPtr<ShaderPipeline> myRenderSkyShader;
   SharedPtr<TextureSampler> myLinearClampSampler;
 	
 	Camera& myCamera;

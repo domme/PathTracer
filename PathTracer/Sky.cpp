@@ -86,6 +86,7 @@ Sky::Sky(const SkyParameters& someParams, Camera& aCamera)
   myComputeTransmittanceLut = RenderCore::CreateComputeShaderPipeline("resources/shaders/sky/RenderSkyRayMarching.hlsl", "ComputeTransmittanceLut", "OPTICAL_DEPTH_ONLY");
 	myComputeSkyViewLut = RenderCore::CreateComputeShaderPipeline("resources/shaders/sky/RenderSkyRayMarching.hlsl", "ComputeSkyViewLut");
 	myComputeRaymarching = RenderCore::CreateComputeShaderPipeline("resources/shaders/sky/RenderSkyRayMarching.hlsl", "ComputeRaymarching");
+	myRenderSkyShader = RenderCore::CreateComputeShaderPipeline("resources/shaders/render_sky.hlsl");
 
 	// Transmittance lut texture
   {
@@ -226,26 +227,43 @@ void Sky::ComputeLuts(CommandList* ctx)
 
 void Sky::Render(CommandList* ctx, TextureView* aDestTextureWrite, TextureView* aDepthBufferRead)
 {
+	GPU_SCOPED_PROFILER_FUNCTION(ctx, 0u);
+
 	using namespace Priv_Sky;
 
 	glm::uvec2 texSize = { aDestTextureWrite->GetTexture()->GetProperties().myWidth, aDestTextureWrite->GetTexture()->GetProperties().myHeight };
-
-	SkyAtmosphereCbuffer atmoCbuffer = GetSkyAtmosphereCbuffer();
-	ctx->BindConstantBuffer(&atmoCbuffer, sizeof(atmoCbuffer), 0);
 	
-	CommonCbuffer commonCBuffer = {};
-	commonCBuffer.gSunIlluminance = mySunIlluminance;
-	commonCBuffer.gResolution = texSize;
-	commonCBuffer.myOutTexIndex = ctx->GetPrepareDescriptorIndex(aDestTextureWrite);
-	commonCBuffer.myTransmittanceLutTextureIndex = ctx->GetPrepareDescriptorIndex(myTransmittanceLutRead.get());
-	commonCBuffer.myLinearClampSamplerIndex = myLinearClampSampler->GetGlobalDescriptorIndex();
-	commonCBuffer.myDepthBufferIndex = ctx->GetPrepareDescriptorIndex(aDepthBufferRead);
-	commonCBuffer.mySkyViewLutTextureIndex = ctx->GetPrepareDescriptorIndex(mySkyViewLutRead.get());
-	ctx->BindConstantBuffer(&commonCBuffer, sizeof(commonCBuffer), 1);
+	struct Cbuffer
+	{
+    glm::float2 myInvResolution;
+		uint myOutTexIdx;
+		uint mySkyViewLutTextureIndex;
 
-	GPU_BEGIN_PROFILE(ctx, "Sky Render", 0u);
+    glm::float4x4 myInvViewProj;
+
+    glm::float3 myViewPos;
+		float myAtmosphereBottomRadius;
+
+    glm::float3 mySunDirection;
+		uint myLinearClampSamplerIndex;
+
+		glm::uvec2 mySkyViewLutTextureRes;
+	} cbuffer;
+
+	cbuffer.myInvResolution = glm::float2(1.0f, 1.0f) / glm::float2(texSize);
+	cbuffer.myOutTexIdx = ctx->GetPrepareDescriptorIndex(aDestTextureWrite);
+	cbuffer.mySkyViewLutTextureIndex = ctx->GetPrepareDescriptorIndex(mySkyViewLutRead.get());
+	cbuffer.myInvViewProj = glm::inverse(myCamera.myViewProj);
+	cbuffer.myViewPos = myCamera.myPosition;
+	cbuffer.myAtmosphereBottomRadius = myAtmosphereParams.BottomRadius;
+	cbuffer.mySunDirection = mySunDir;
+	cbuffer.myLinearClampSamplerIndex = myLinearClampSampler->GetGlobalDescriptorIndex();
+	cbuffer.mySkyViewLutTextureRes = { mySkyViewLutRead->GetTexture()->GetProperties().myWidth, mySkyViewLutRead->GetTexture()->GetProperties().myHeight };
+	ctx->BindConstantBuffer(&cbuffer, sizeof(cbuffer), 0);
+
+	ctx->SetShaderPipeline(myRenderSkyShader.get());
+	
 	ctx->Dispatch({ texSize.x, texSize.y, 1 });
-	GPU_END_PROFILE(ctx);
 
 	ctx->ResourceUAVbarrier(aDestTextureWrite->GetTexture());
 }

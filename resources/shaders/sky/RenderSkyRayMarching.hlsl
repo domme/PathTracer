@@ -3,6 +3,7 @@
 #include "SkyAtmosphereCommon.hlsl"
 #include "RenderSkyCommon.hlsl"
 #include "Common.hlsl"
+#include "Common_Functions.hlsl"
 
 struct SingleScatteringResult
 {
@@ -144,7 +145,7 @@ SingleScatteringResult IntegrateScatteredLuminance(
 		const float3 UpVector = P / pHeight;
 		float SunZenithCosAngle = dot(SunDir, UpVector);
 		float2 uv;
-		LutTransmittanceParamsToUv(Atmosphere, pHeight, SunZenithCosAngle, uv);
+		LutTransmittanceParamsToUv(Atmosphere.BottomRadius, Atmosphere.TopRadius, pHeight, SunZenithCosAngle, uv);
 		SamplerState linearClampSampler = theSamplers[myLinearClampSamplerIndex];
 		float3 TransmittanceToSun = theTextures2D[myTransmittanceLutTextureIndex].SampleLevel(linearClampSampler, uv, 0).rgb;
 
@@ -212,7 +213,7 @@ SingleScatteringResult IntegrateScatteredLuminance(
 		const float3 UpVector = P / pHeight;
 		float SunZenithCosAngle = dot(SunDir, UpVector);
 		float2 uv;
-		LutTransmittanceParamsToUv(Atmosphere, pHeight, SunZenithCosAngle, uv);
+		LutTransmittanceParamsToUv(Atmosphere.BottomRadius, Atmosphere.TopRadius, pHeight, SunZenithCosAngle, uv);
 
 		SamplerState linearClampSampler = theSamplers[myLinearClampSamplerIndex];
 		float3 TransmittanceToSun = theTextures2D[myTransmittanceLutTextureIndex].SampleLevel(linearClampSampler, uv, 0).rgb;
@@ -346,7 +347,7 @@ void ComputeRaymarching(uint3 aDTid : SV_DispatchThreadID)
 
 		bool IntersectGround = raySphereIntersectNearest(WorldPos, WorldDir, float3(0, 0, 0), Atmosphere.BottomRadius) >= 0.0f;
 
-		SkyViewLutParamsToUv(Atmosphere, IntersectGround, viewZenithCosAngle, lightViewCosAngle, viewHeight, uv);
+		SkyViewLutParamsToUv(Atmosphere.BottomRadius, uint2(SKY_VIEW_TEXTURE_WIDTH, SKY_VIEW_TEXTURE_HEIGHT), IntersectGround, viewZenithCosAngle, lightViewCosAngle, viewHeight, uv);
 
 		SamplerState linearClampSampler = theSamplers[myLinearClampSamplerIndex];
 		luminance = float4(theTextures2D[mySkyViewLutTextureIndex].SampleLevel(linearClampSampler, uv, 0).rgb  + GetSunLuminance(WorldPos, WorldDir, Atmosphere.BottomRadius), 1.0);

@@ -3,6 +3,7 @@
 
 #include "fancy/resources/shaders/GlobalResources.h"
 #include "SkyAtmosphereCommon.hlsl"
+#include "Common_Functions.hlsl"
 
 #define RAYDPOS 0.00001f
 
@@ -73,9 +74,6 @@ MediumSampleRGB sampleMediumRGB(in float3 WorldPos, in AtmosphereParameters Atmo
 
 	return s;
 }
-
-float fromUnitToSubUvs(float u, float resolution) { return (u + 0.5f / resolution) * (resolution / (resolution + 1.0f)); }
-float fromSubUvsToUnit(float u, float resolution) { return (u - 0.5f / resolution) * (resolution / (resolution - 1.0f)); }
 
 ////////////////////////////////////////////////////////////
 // Sampling functions
@@ -183,38 +181,6 @@ void UvToSkyViewLutParams(AtmosphereParameters Atmosphere, out float viewZenithC
 	float coord = uv.x;
 	coord *= coord;
 	lightViewCosAngle = -(coord*2.0 - 1.0);
-}
-
-void SkyViewLutParamsToUv(AtmosphereParameters Atmosphere, in bool IntersectGround, in float viewZenithCosAngle, in float lightViewCosAngle, in float viewHeight, out float2 uv)
-{
-	float Vhorizon = sqrt(viewHeight * viewHeight - Atmosphere.BottomRadius * Atmosphere.BottomRadius);
-	float CosBeta = Vhorizon / viewHeight;				// GroundToHorizonCos
-	float Beta = acos(CosBeta);
-	float ZenithHorizonAngle = PI - Beta;
-
-	if (!IntersectGround)
-	{
-		float coord = acos(viewZenithCosAngle) / ZenithHorizonAngle;
-		coord = 1.0 - coord;
-		coord = sqrt(coord);
-		coord = 1.0 - coord;
-		uv.y = coord * 0.5f;
-	}
-	else
-	{
-		float coord = (acos(viewZenithCosAngle) - ZenithHorizonAngle) / Beta;
-		coord = sqrt(coord);
-		uv.y = coord * 0.5f + 0.5f;
-	}
-
-	{
-		float coord = -lightViewCosAngle * 0.5f + 0.5f;
-		coord = sqrt(coord);
-		uv.x = coord;
-	}
-
-	// Constrain uvs to valid sub texel range (avoid zenith derivative issue making LUT usage visible)
-	uv = float2(fromUnitToSubUvs(uv.x, SKY_VIEW_TEXTURE_WIDTH), fromUnitToSubUvs(uv.y, SKY_VIEW_TEXTURE_HEIGHT));
 }
 
 bool MoveToTopAtmosphere(inout float3 WorldPos, in float3 WorldDir, in float AtmosphereTopRadius)
