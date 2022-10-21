@@ -33,9 +33,9 @@ VS_OUT main(VS_IN v)
 float4 main(VS_OUT fs_in) : SV_TARGET
 {
   float4 hdrColor = theTextures2D[mySrcTextureIdx][int2(fs_in.pos.xy)];
-  float4 sdrColor = hdrColor; // hdrColor / (hdrColor + 1);
+  float4 sdrColor = hdrColor / (hdrColor + 1);
 
-  return float4(myIsBGR ? sdrColor.bgr : sdrColor.rgb, 1.f);
+  return float4(sdrColor.rgb, 1.f);
 }
 
 #endif // PROGRAM_TYPE_FRAGMENT

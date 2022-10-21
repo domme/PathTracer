@@ -1,5 +1,6 @@
-#include "fancy/resources/shaders/GlobalResources.h"
-#include "resources/shaders/sky/Common_Functions.hlsl"
+
+#include "../../fancy/resources/shaders/GlobalResources.h"
+#include "sky/Common.hlsl"
 
 cbuffer CB0 : register(b0, Space_LocalCBuffer)
 {
@@ -21,14 +22,13 @@ cbuffer CB0 : register(b0, Space_LocalCBuffer)
 [numthreads(8, 8, 1)]
 void main(uint3 aDTid : SV_DispatchThreadID)
 {
-	float2 pixPos = aDTid.xy + 0.5;
+	float2 pixPos = aDTid.xy;
 	float3 clipSpace = float3((pixPos * myInvResolution) * float2(2.0, -2.0) - float2(1.0, -1.0), 1.0);
 	float4 farPlaneWorldPos = mul(myInvViewProj, float4(clipSpace, 1.0));
 	farPlaneWorldPos.xyz /= farPlaneWorldPos.w;
 
 	float3 viewDir = normalize(farPlaneWorldPos.xyz - myViewPos);
-	float3 viewPos = myViewPos;
-	viewPos.y += myAtmosphereBottomRadius;
+	float3 viewPos = myViewPos + float3(0, myAtmosphereBottomRadius, 0);
 
 	float viewHeight = length(viewPos);
 
@@ -47,6 +47,7 @@ void main(uint3 aDTid : SV_DispatchThreadID)
 	SkyViewLutParamsToUv(myAtmosphereBottomRadius, mySkyViewLutTextureRes, IntersectGround, viewZenithCosAngle, lightViewCosAngle, viewHeight, uv);
 
 	SamplerState linearClampSampler = theSamplers[myLinearClampSamplerIndex];
+
 	float3 luminance = theTextures2D[mySkyViewLutTextureIndex].SampleLevel(linearClampSampler, uv, 0).xyz;
 
     theRwTextures2D[myOutTexIdx][aDTid.xy] = float4(luminance, 1.0);

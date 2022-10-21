@@ -72,70 +72,22 @@ struct SkyParameters
 
 class Sky
 {
+	friend class Sky_Imgui;
+
 public:
-  Sky(const SkyParameters& someParams, Camera& aCamera);
+  Sky(const SkyParameters& someParams);
   ~Sky();
 
-	void UpdateImgui();
-
-  void ComputeLuts(CommandList* ctx);
-	void Render(CommandList* ctx, TextureView* aDestTextureWrite, TextureView* aDepthBufferRead);
+	void ComputeTranmittanceLut(CommandList* ctx);
+	void ComputeSkyViewLut(CommandList* ctx, const Camera& aCamera);
+	void Render(CommandList* ctx, TextureView* aDestTextureWrite, TextureView* aDepthBufferRead, const Camera& aCamera);
 	
 	float myMultiScatteringFactor = 0.0f;
 	glm::float3 mySunDir = glm::float3(0, 1, 0);
-	glm::float3 mySunIlluminance = glm::float3(1.0f, 1.0f, 1.0f);
+	glm::float3 mySunIlluminance = glm::float3(1000.0f);
 	AtmosphereParameters myAtmosphereParams;
 
-private:
-	struct SkyAtmosphereCbuffer
-	{
-		AtmosphereParameters myAtmosphereParameters;
-
-		int TRANSMITTANCE_TEXTURE_WIDTH;
-		int TRANSMITTANCE_TEXTURE_HEIGHT;
-		int IRRADIANCE_TEXTURE_WIDTH;
-		int IRRADIANCE_TEXTURE_HEIGHT;
-
-		int SCATTERING_TEXTURE_R_SIZE;
-		int SCATTERING_TEXTURE_MU_SIZE;
-		int SCATTERING_TEXTURE_MU_S_SIZE;
-		int SCATTERING_TEXTURE_NU_SIZE;
-
-		glm::float3 SKY_SPECTRAL_RADIANCE_TO_LUMINANCE;
-		int SKY_VIEW_TEXTURE_WIDTH;
-		glm::float3 SUN_SPECTRAL_RADIANCE_TO_LUMINANCE;
-		int SKY_VIEW_TEXTURE_HEIGHT;
-
-		//
-		// Other globals
-		//
-		glm::float4x4 gSkyViewProjMat;
-		glm::float4x4 gSkyInvViewProjMat;
-		glm::float4x4 gShadowmapViewProjMat;
-
-		glm::float3 camera;
-		float  pad5;
-		glm::float3 sun_direction;
-		float  pad6;
-		glm::float3 view_ray;
-		float  pad7;
-
-		float MultipleScatteringFactor;
-		float MultiScatteringLUTRes;
-		float pad9;
-		float pad10;
-	};
-
-	struct ImGuiDebugImage
-	{
-		TextureView* myTexture = nullptr;
-		float myZoom = 1.0f;
-
-		void Update(TextureView* aTexture, const char* aName);
-	};
-
-	SkyAtmosphereCbuffer GetSkyAtmosphereCbuffer();
-
+// private:
 	SharedPtr<TextureView> myTransmittanceLutRead;
 	SharedPtr<TextureView> myTransmittanceLutWrite;
 	SharedPtr<TextureView> mySkyViewLutRead;
@@ -146,13 +98,6 @@ private:
 	SharedPtr<ShaderPipeline> myRenderSkyShader;
   SharedPtr<TextureSampler> myLinearClampSampler;
 	
-	Camera& myCamera;
 	SkyParameters myParams;
-
-	bool myImgui_windowOpen = false;
-	bool myImgui_showTransmittanceLut = false;
-	ImGuiDebugImage myImgui_TransmittanceLutImg;
-	ImGuiDebugImage myImgui_SkyViewLutImg;
-	
 };
 

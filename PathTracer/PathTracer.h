@@ -2,6 +2,7 @@
 
 #include <EASTL/vector.h>
 
+#include "Sky_Imgui.h"
 #include "Common/Application.h"
 #include "Common/Ptr.h"
 
@@ -75,12 +76,13 @@ private:
   void RestartAccumulation();
   bool CameraHasChanged();
 
-  void ComputeSky(CommandList* ctx);
   void RenderRaster(CommandList* ctx);
   void RenderRT(CommandList* ctx);
   void TonemapComposit(CommandList* ctx);
 
   SharedPtr<Sky> mySky;
+  Sky_Imgui mySky_Imgui;
+
   SharedPtr<Scene> myScene;
   SharedPtr<ShaderPipeline> myUnlitMeshShader;
   SharedPtr<ShaderPipeline> myTonemapCompositShader;

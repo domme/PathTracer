@@ -4,6 +4,21 @@
 #include "fancy/resources/shaders/GlobalResources.h"
 #include "fancy/resources/shaders/Encoding.h"
 #include "fancy/resources/shaders/common_types.h"
+#include "../sky/Common.hlsl"
+
+struct SkyConstants
+{
+  AtmosphereParameters myAtmosphere;
+
+	float3 mySunDirection;
+	uint myTransmissionLutTexIdx;
+
+  float3 mySunIlluminance;
+  float _unused;
+
+  float2 myRayMarchMinMaxSPP;
+  float2 _unused2;
+};
 
 cbuffer Constants : register(b0, Space_LocalCBuffer)
 {
@@ -23,6 +38,11 @@ cbuffer Constants : register(b0, Space_LocalCBuffer)
   uint mySampleBufferIndex;
   uint myFrameRandomSeed;
   uint myNumAccumulationFrames;
+
+  uint3 _unused;
+  uint myLinearClampSamplerIndex;
+
+  SkyConstants mySkyConsts;
 };
 
 struct HitInfo

@@ -72,7 +72,7 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 
   myScene = eastl::make_shared<Scene>(sceneData, myAssetManager.get());
 
-  myCamera.myPosition = glm::float3(1.0f, -1.0f, -1460.0f);
+  myCamera.myPosition = glm::float3(1.0f, 1.0f, -1460.0f);
   myCamera.myOrientation = glm::quat_cast(glm::lookAt(glm::float3(0.0f, 0.0f, 10.0f), glm::float3(0.0f, 0.0f, 0.0f), glm::float3(0.0f, 1.0f, 0.0f)));
 
   myCameraController.myMoveSpeed = 50.0f;
@@ -93,7 +93,7 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 void PathTracer::InitSky()
 {
   SkyParameters skyParams;
-  mySky.reset(new Sky(skyParams, myCamera));
+  mySky.reset(new Sky(skyParams));
 }
 
 glm::uvec2 GetOffsetSize(const VertexInputLayoutProperties& someVertexProps, VertexAttributeSemantic aSemantic, uint aSemanticIndex)
@@ -353,10 +353,10 @@ void PathTracer::Update()
   if (ImGui::DragFloat("Ao Distance", &myAoDistance))
     RestartAccumulation();
 
-  if (CameraHasChanged())
-    RestartAccumulation();
+  bool skyParamsChanged = mySky_Imgui.Update(mySky.get());
 
-  mySky->UpdateImgui();
+  if (CameraHasChanged() || skyParamsChanged)
+    RestartAccumulation();
 
   myLastViewMat = myCamera.myViewProj;
 }
@@ -369,7 +369,7 @@ void PathTracer::Render()
   {
     GPU_SCOPED_PROFILER_FUNCTION(ctx, 0u);
 
-    ComputeSky(ctx);
+    mySky->ComputeTranmittanceLut(ctx);
 
     if (myRenderRaster)
     {
@@ -388,16 +388,11 @@ void PathTracer::Render()
   ImGui::Render();
 }
 
-void PathTracer::ComputeSky(CommandList* ctx)
-{
-  GPU_SCOPED_PROFILER_FUNCTION(ctx, 0u);
-  
-  mySky->ComputeLuts(ctx);
-}
-
 void PathTracer::RenderRaster(CommandList* ctx)
 {
   GPU_SCOPED_PROFILER_FUNCTION(ctx, 0u);
+
+  mySky->ComputeSkyViewLut(ctx, myCamera);
 
   uint dstTexWidth = myHdrLightTexRead->GetTexture()->GetProperties().myWidth;
   uint dstTexHeight = myHdrLightTexRead->GetTexture()->GetProperties().myHeight;
@@ -408,7 +403,7 @@ void PathTracer::RenderRaster(CommandList* ctx)
   glm::float4 clearColor(0.0f);
   ctx->ClearRenderTarget(myHdrLightTexRtv.get(), &clearColor[0]);
 
-  mySky->Render(ctx, myHdrLightTexWrite.get(), nullptr);
+  mySky->Render(ctx, myHdrLightTexWrite.get(), nullptr, myCamera);
 
   ctx->SetRenderTarget(myHdrLightTexRtv.get() , myDepthStencilDsv.get());
 
@@ -487,6 +482,26 @@ void PathTracer::RenderRT(CommandList* ctx)
     eastl::fixed_vector<glm::float3, 4> nearPlaneVertices;
     myCamera.GetVerticesOnNearPlane(nearPlaneVertices);
 
+    struct SkyConstants
+    {
+      AtmosphereParameters myAtmosphere;
+
+      glm::float3 mySunDirection;
+      uint myTransmissionLutTexIdx;
+
+      glm::float3 mySunIlluminance;
+      float _unused;
+
+      glm::float2 myRayMarchMinMaxSPP;
+      glm::float2 _unused2;
+    } skyConsts;
+
+    skyConsts.myAtmosphere = mySky->myAtmosphereParams;
+    skyConsts.mySunDirection = mySky->mySunDir;
+    skyConsts.myTransmissionLutTexIdx = ctx->GetPrepareDescriptorIndex(mySky->myTransmittanceLutRead.get());
+    skyConsts.mySunIlluminance = mySky->mySunIlluminance;
+    skyConsts.myRayMarchMinMaxSPP = glm::float2(4.0f, 14.0f);
+
     struct RtConsts
     {
       glm::float3 myNearPlaneCorner;
@@ -505,6 +520,12 @@ void PathTracer::RenderRT(CommandList* ctx)
       uint mySampleBufferIndex;
       uint myFrameRandomSeed;
       uint myNumAccumulationFrames;
+
+      glm::uvec3 _unused;
+      uint myLinearClampSamplerIndex;
+
+      SkyConstants mySkyConsts;
+
     } rtConsts;
 
     rtConsts.myNearPlaneCorner = nearPlaneVertices[0];
@@ -519,6 +540,8 @@ void PathTracer::RenderRT(CommandList* ctx)
     rtConsts.mySampleBufferIndex = myRtScene.myHaltonSamples->GetGlobalDescriptorIndex();
     rtConsts.myFrameRandomSeed = (uint)Time::ourFrameIdx;
     rtConsts.myNumAccumulationFrames = myNumAccumulationFrames++;
+    rtConsts.myLinearClampSamplerIndex = RenderCore::ourLinearClampSampler->GetGlobalDescriptorIndex();
+    rtConsts.mySkyConsts = skyConsts;
     ctx->BindConstantBuffer(&rtConsts, sizeof(rtConsts), 0);
 
     ctx->PrepareResourceShaderAccess(myHdrLightTexWrite.get());
