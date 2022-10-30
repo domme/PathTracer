@@ -27,6 +27,8 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 {
   ImGuiRendering::Init(myRenderOutput);
 
+  mySupportsRaytracing = RenderCore::GetPlatformCaps().mySupportsRaytracing;
+
   DepthStencilStateProperties dsProps;
   dsProps.myDepthTestEnabled = false;
   dsProps.myDepthWriteEnabled = false;
@@ -68,7 +70,8 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
     }
   }
 
-  InitRtScene(sceneData);
+  if (mySupportsRaytracing)
+    InitRtScene(sceneData);
 
   myScene = eastl::make_shared<Scene>(sceneData, myAssetManager.get());
 
@@ -342,21 +345,24 @@ void PathTracer::BeginFrame()
 void PathTracer::Update()
 {
   Application::Update();
-  if (ImGui::Checkbox("Render Raster", &myRenderRaster) && !myRenderRaster)
-    RestartAccumulation();
-
-  ImGui::ProgressBar((float)(myNumAccumulationFrames) / (float)myMaxNumAccumulationFrames, ImVec2(-1, 0), "Rendering Progress");
-
-  if (ImGui::InputInt("Accumulation Frames", &myMaxNumAccumulationFrames))
-    RestartAccumulation();
-
-  if (ImGui::DragFloat("Ao Distance", &myAoDistance))
-    RestartAccumulation();
-
   bool skyParamsChanged = mySky_Imgui.Update(mySky.get());
 
-  if (CameraHasChanged() || skyParamsChanged)
-    RestartAccumulation();
+  if (mySupportsRaytracing)
+  {
+    if (ImGui::Checkbox("Render Raster", &myRenderRaster) && !myRenderRaster)
+      RestartAccumulation();
+
+    ImGui::ProgressBar((float)(myNumAccumulationFrames) / (float)myMaxNumAccumulationFrames, ImVec2(-1, 0), "Rendering Progress");
+
+    if (ImGui::InputInt("Accumulation Frames", &myMaxNumAccumulationFrames))
+      RestartAccumulation();
+
+    if (ImGui::DragFloat("Ao Distance", &myAoDistance))
+      RestartAccumulation();
+
+    if (CameraHasChanged() || skyParamsChanged)
+      RestartAccumulation();
+  }
 
   myLastViewMat = myCamera.myViewProj;
 }
@@ -371,7 +377,7 @@ void PathTracer::Render()
 
     mySky->ComputeTranmittanceLut(ctx);
 
-    if (myRenderRaster)
+    if (myRenderRaster || !mySupportsRaytracing)
     {
       RenderRaster(ctx);
     }
@@ -584,7 +590,7 @@ void PathTracer::TonemapComposit(CommandList* ctx)
   ctx->PrepareResourceShaderAccess(myHdrLightTexRead.get());
 
   glm::float2 fsTriangleVerts[] = {
-    { -2.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 2.0f }
+    { -4.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 4.0f }
   };
   ctx->BindVertexBuffer(fsTriangleVerts, sizeof(fsTriangleVerts));
   ctx->SetRenderTarget(myRenderOutput->GetBackbufferRtv(), nullptr);

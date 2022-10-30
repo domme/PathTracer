@@ -104,5 +104,6 @@ private:
   ImGuiContext* myImGuiContext = nullptr;
   bool myRenderRaster = false;
   int myMaxNumAccumulationFrames = 50;
+  bool mySupportsRaytracing = false;
 };
 
