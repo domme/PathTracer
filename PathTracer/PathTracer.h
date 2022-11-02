@@ -96,14 +96,16 @@ private:
   SharedPtr<TextureView> myDepthStencilDsv;
   SharedPtr<DepthStencilState> myDepthTestOff;
 
-  float myAoDistance = 50.0f;
+  float myAoDistance = 1.0f;
   uint myNumAccumulationFrames = 0u;
   bool myAccumulationNeedsClear = true;
   glm::float4x4 myLastViewMat;
   
   ImGuiContext* myImGuiContext = nullptr;
   bool myRenderRaster = false;
+  bool myRenderAo = false;
   int myMaxNumAccumulationFrames = 50;
+  int myMaxRecursionDepth = 2;
   bool mySupportsRaytracing = false;
 };
 

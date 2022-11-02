@@ -39,8 +39,10 @@ cbuffer Constants : register(b0, Space_LocalCBuffer)
   uint myFrameRandomSeed;
   uint myNumAccumulationFrames;
 
-  uint3 _unused;
+  uint myRayHitGroupOffset;
   uint myLinearClampSamplerIndex;
+  uint myMaxRecursionDepth;
+  uint _unused;
 
   SkyConstants mySkyConsts;
 };

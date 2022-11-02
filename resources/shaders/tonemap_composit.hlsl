@@ -21,7 +21,7 @@ struct VS_IN
 VS_OUT main(VS_IN v)
 {
   VS_OUT vs_out = (VS_OUT)0;
-  vs_out.pos = float4(v.position.x, v.position.y, 0, 0);
+  vs_out.pos = float4(v.position.x, v.position.y, 1, 1);
   return vs_out;
 }
 

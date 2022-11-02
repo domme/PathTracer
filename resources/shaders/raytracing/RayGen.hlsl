@@ -35,15 +35,18 @@ void RayGen()
   TraceRay( theRtAccelerationStructures[myAsIndex],
             0,
             0xFF,
-            0,
+            myRayHitGroupOffset,
             0,
             0,
             rayDesc,
             payload);
 
-  float4 accumLight = theRwTextures2D[myOutTexIndex][pixel] * myNumAccumulationFrames;
-  accumLight += float4(payload.colorAndDistance.xyz, 0.0);
-  accumLight /= float(myNumAccumulationFrames + 1);
+  if (myRayHitGroupOffset != 1 || length(payload.colorAndDistance.xyz) > 0) // Only do this in pathtracing mode
+  {
+    float4 accumLight = theRwTextures2D[myOutTexIndex][pixel] * myNumAccumulationFrames;
+    accumLight += float4(payload.colorAndDistance.xyz, 0.0);
+    accumLight /= float(myNumAccumulationFrames + 1);
 
-  theRwTextures2D[myOutTexIndex][pixel] = accumLight;
+    theRwTextures2D[myOutTexIndex][pixel] = accumLight;
+  }
 }

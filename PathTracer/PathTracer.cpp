@@ -58,7 +58,7 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 
   SceneData sceneData;
   MeshImporter importer;
-  const bool importSuccess = importer.Import("resources/models/Cycles.obj", vertexAttributes, sceneData);
+  const bool importSuccess = importer.Import("resources/models/CornellBox.obj", vertexAttributes, sceneData);
   ASSERT(importSuccess);
 
   // Manually add emission to the light since obj doesn't support exporting lights
@@ -75,10 +75,10 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 
   myScene = eastl::make_shared<Scene>(sceneData, myAssetManager.get());
 
-  myCamera.myPosition = glm::float3(1.0f, 1.0f, -1460.0f);
+  myCamera.myPosition = glm::float3(1.0f, 102.0f, -30.0f);
   myCamera.myOrientation = glm::quat_cast(glm::lookAt(glm::float3(0.0f, 0.0f, 10.0f), glm::float3(0.0f, 0.0f, 0.0f), glm::float3(0.0f, 1.0f, 0.0f)));
 
-  myCameraController.myMoveSpeed = 50.0f;
+  myCameraController.myMoveSpeed = 5.0f;
 
   myCamera.myFovDeg = 60.0f;
   myCamera.myNear = 1.0f;
@@ -274,10 +274,13 @@ void PathTracer::InitRtScene(const SceneData& aScene)
   RtPipelineStateProperties rtPipelineProps;
   const uint raygenIdx = rtPipelineProps.AddRayGenShader("resources/shaders/raytracing/RayGen.hlsl", "RayGen");
   const uint missIdx = rtPipelineProps.AddMissShader("resources/shaders/raytracing/Miss.hlsl", "Miss");
-  const uint hitIdx = rtPipelineProps.AddHitGroup(L"HitGroup0", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr, nullptr, nullptr, nullptr, "resources/shaders/raytracing/Hit.hlsl", "ClosestHit");
+  const uint hitIdxAo = rtPipelineProps.AddHitGroup(L"HitGroup0", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr, 
+    nullptr, nullptr, nullptr, "resources/shaders/raytracing/Hit.hlsl", "ComputeAo");
+  const uint hitIdxPathTrace = rtPipelineProps.AddHitGroup(L"HitGroup1", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr,
+    nullptr, nullptr, nullptr, "resources/shaders/raytracing/Hit.hlsl", "ComputeIrradiance");
   rtPipelineProps.SetMaxAttributeSize(32u);
   rtPipelineProps.SetMaxPayloadSize(128u);
-  rtPipelineProps.SetMaxRecursionDepth(2u);
+  rtPipelineProps.SetMaxRecursionDepth(RenderCore::GetPlatformCaps().myRaytracingMaxRecursionDepth);
   myRtScene.myRtPso = RenderCore::CreateRtPipelineState(rtPipelineProps);
 
   RtShaderBindingTableProperties sbtProps;
@@ -287,7 +290,8 @@ void PathTracer::InitRtScene(const SceneData& aScene)
   myRtScene.mySBT = RenderCore::CreateRtShaderTable(sbtProps);
   myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetRayGenShaderIdentifier(raygenIdx));
   myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetMissShaderIdentifier(missIdx));
-  myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetHitShaderIdentifier(hitIdx));
+  myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetHitShaderIdentifier(hitIdxAo));
+  myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetHitShaderIdentifier(hitIdxPathTrace));
 
   InitSampleSequences();
 }
@@ -347,21 +351,38 @@ void PathTracer::Update()
   Application::Update();
   bool skyParamsChanged = mySky_Imgui.Update(mySky.get());
 
+  ImGui::Text("View Pos: %.3f, %.3f, %.3f", myCamera.myPosition.x, myCamera.myPosition.y, myCamera.myPosition.z);
+  ImGui::SliderFloat("Move Speed", &myCameraController.myMoveSpeed, 1.0f, 10000.0f);
+
   if (mySupportsRaytracing)
   {
     if (ImGui::Checkbox("Render Raster", &myRenderRaster) && !myRenderRaster)
       RestartAccumulation();
 
-    ImGui::ProgressBar((float)(myNumAccumulationFrames) / (float)myMaxNumAccumulationFrames, ImVec2(-1, 0), "Rendering Progress");
+    if (!myRenderRaster)
+    {
+      if (ImGui::Checkbox("Render AO", &myRenderAo))
+        RestartAccumulation();
+      
+      ImGui::ProgressBar((float)(myNumAccumulationFrames) / (float)myMaxNumAccumulationFrames, ImVec2(-1, 0), "Rendering Progress");
 
-    if (ImGui::InputInt("Accumulation Frames", &myMaxNumAccumulationFrames))
-      RestartAccumulation();
+      if (ImGui::InputInt("Accumulation Frames", &myMaxNumAccumulationFrames))
+        RestartAccumulation();
 
-    if (ImGui::DragFloat("Ao Distance", &myAoDistance))
-      RestartAccumulation();
+      if (myRenderAo)
+      {
+        if (ImGui::DragFloat("Ao Distance", &myAoDistance))
+          RestartAccumulation();
+      }
+      else
+      {
+        if (ImGui::InputInt("Max Recursion Depth", &myMaxRecursionDepth, 1, RenderCore::GetPlatformCaps().myRaytracingMaxRecursionDepth - 1))
+          RestartAccumulation();
+      }
 
-    if (CameraHasChanged() || skyParamsChanged)
-      RestartAccumulation();
+      if (CameraHasChanged() || skyParamsChanged)
+        RestartAccumulation();
+    }
   }
 
   myLastViewMat = myCamera.myViewProj;
@@ -527,8 +548,10 @@ void PathTracer::RenderRT(CommandList* ctx)
       uint myFrameRandomSeed;
       uint myNumAccumulationFrames;
 
-      glm::uvec3 _unused;
+      uint myPrimaryRayHitGroupOffset;
       uint myLinearClampSamplerIndex;
+      uint myMaxRecursionDepth;
+      uint _unused;
 
       SkyConstants mySkyConsts;
 
@@ -546,7 +569,9 @@ void PathTracer::RenderRT(CommandList* ctx)
     rtConsts.mySampleBufferIndex = myRtScene.myHaltonSamples->GetGlobalDescriptorIndex();
     rtConsts.myFrameRandomSeed = (uint)Time::ourFrameIdx;
     rtConsts.myNumAccumulationFrames = myNumAccumulationFrames++;
+    rtConsts.myPrimaryRayHitGroupOffset = myRenderAo ? 0 : 1;  // Switches between ao and path tracing. Must match the hit groups in the SBT
     rtConsts.myLinearClampSamplerIndex = RenderCore::ourLinearClampSampler->GetGlobalDescriptorIndex();
+    rtConsts.myMaxRecursionDepth = (uint)myMaxRecursionDepth;
     rtConsts.mySkyConsts = skyConsts;
     ctx->BindConstantBuffer(&rtConsts, sizeof(rtConsts), 0);
 

@@ -39,5 +39,5 @@ void Miss(inout HitInfo payload : SV_RayPayload)
 		skyLuminance = ss.L;
     }
 
-    payload.colorAndDistance = float4(skyLuminance, -1.f);
+    payload.colorAndDistance += float4(skyLuminance, -1.f);
 }
