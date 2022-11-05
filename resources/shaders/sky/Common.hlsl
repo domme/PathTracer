@@ -224,17 +224,6 @@ MediumSampleRGB sampleMediumRGB(in float3 aPosWorld, in AtmosphereParameters Atm
 // Sampling functions
 ////////////////////////////////////////////////////////////
 
-// Generates a uniform distribution of directions over a sphere.
-// Random zetaX and zetaY values must be in [0, 1].
-// Top and bottom sphere pole (+-zenith) are along the Y axis.
-float3 getUniformSphereSample(float zetaX, float zetaY)
-{
-	float phi = 2.0f * 3.14159f * zetaX;
-	float theta = 2.0f * acos(sqrt(1.0f - zetaY));
-	float3 dir = float3(sin(theta)*cos(phi), cos(theta), sin(theta)*sin(phi));
-	return dir;
-}
-
 // Generate a sample (using importance sampling) along an infinitely long path with a given constant extinction.
 // Zeta is a random number in [0,1]
 float infiniteTransmittanceIS(float extinction, float zeta)
@@ -547,7 +536,6 @@ SingleScatteringResult IntegrateScatteredLuminance(
 		// First evaluate opaque shadow
 		shadow = getShadow(Atmosphere, P);
 #endif
-
 		float3 S = globalL * (earthShadow * shadow * TransmittanceToSun * PhaseTimesScattering + multiScatteredLuminance * medium.scattering);
 		
 		float3 MS = medium.scattering * 1;

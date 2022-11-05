@@ -32,6 +32,14 @@
  //    RNG
  // -------------------------------------------------------------------------
 
+ #define USE_PCG 1
+
+#if USE_PCG
+	#define RngStateType uint4
+#else
+	#define RngStateType uint
+#endif
+
 // PCG random numbers generator
 // Source: "Hash Functions for GPU Rendering" by Jarzynski & Olano
 uint4 pcg4d(uint4 v)
@@ -63,7 +71,7 @@ uint xorshift(inout uint rngState)
 }
 
 // Jenkins's "one at a time" hash function
-uint JenkinsHash(uint x) {
+uint jenkinsHash(uint x) {
 	x += x << 10;
 	x ^= x >> 6;
 	x += x << 3;
@@ -73,24 +81,41 @@ uint JenkinsHash(uint x) {
 }
 
 // Converts unsigned integer into float int range <0; 1) by using 23 most significant bits for mantissa
-float UintToFloat(uint x) {
+float uintToFloat(uint x) {
 	return asfloat(0x3f800000 | (x >> 9)) - 1.0f;
 }
 
+#if USE_PCG
+
 // Initialize RNG for given pixel, and frame number (PCG version)
-uint4 InitRNG(uint2 pixelCoords, uint2 resolution, uint frameNumber) {
-	return uint4(pixelCoords.xy, frameNumber, 0); //< Seed for PCG uses a sequential sample number in 4th channel, which increments on every RNG call and starts from 0
+RngStateType InitRNG(uint2 pixelCoords, uint2 resolution, uint frameNumber) {
+	return RngStateType(pixelCoords.xy, frameNumber, 0); //< Seed for PCG uses a sequential sample number in 4th channel, which increments on every RNG call and starts from 0
 }
 
 // Return random float in <0; 1) range  (PCG version)
-float GetRand01(inout uint4 rngState) {
+float GetRand01(inout RngStateType rngState) {
 	rngState.w++; //< Increment sample index
-	return UintToFloat(pcg4d(rngState).x);
+	return uintToFloat(pcg4d(rngState).x);
 }
+
+#else
+
+// Initialize RNG for given pixel, and frame number (Xorshift-based version)
+RngStateType InitRNG(uint2 pixelCoords, uint2 resolution, uint frameNumber) {
+	RngStateType seed = dot(pixelCoords, uint2(1, resolution.x)) ^ jenkinsHash(frameNumber);
+	return jenkinsHash(seed);
+}
+
+// Return random float in <0; 1) range (Xorshift-based version)
+float GetRand01(inout RngStateType rngState) {
+	return uintToFloat(xorshift(rngState));
+}
+
+#endif
 
 // Maps integers to colors using the hash function (generates pseudo-random colors)
 float3 HashAndColor(int i) {
-	uint hash = JenkinsHash(i);
+	uint hash = jenkinsHash((uint)i);
 	float r = ((hash >> 0) & 0xFF) / 255.0f;
 	float g = ((hash >> 8) & 0xFF) / 255.0f;
 	float b = ((hash >> 16) & 0xFF) / 255.0f;

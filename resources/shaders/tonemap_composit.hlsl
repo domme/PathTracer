@@ -4,6 +4,10 @@ cbuffer CB0 : register(b0, Space_LocalCBuffer)
 {
   bool myIsBGR;
   uint mySrcTextureIdx;
+  uint myLinearClampSamplerIndex;
+  uint myNumAccumulationFrames;
+
+  float2 myPixelToUv;
 };
 
 struct VS_OUT
@@ -32,9 +36,10 @@ VS_OUT main(VS_IN v)
 
 float4 main(VS_OUT fs_in) : SV_TARGET
 {
-  float4 hdrColor = theTextures2D[mySrcTextureIdx][int2(fs_in.pos.xy)];
-  float4 sdrColor = hdrColor / (hdrColor + 1);
-
+  SamplerState linearClampSampler = theSamplers[myLinearClampSamplerIndex];
+  float2 uv = myPixelToUv * int2(fs_in.pos.xy);
+	float3 hdrColor = theTextures2D[mySrcTextureIdx].SampleLevel(linearClampSampler, uv, 0).xyz;
+  float3 sdrColor = hdrColor / (hdrColor + 1);
   return float4(sdrColor.rgb, 1.f);
 }
 

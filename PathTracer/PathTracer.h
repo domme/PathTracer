@@ -43,6 +43,8 @@ struct RaytracingScene
   SharedPtr<GpuBufferView> myHaltonSamples;
   SharedPtr<RtPipelineState> myRtPso;
   SharedPtr<RtShaderBindingTable> mySBT;
+  SharedPtr<RtPipelineState> myAoRtPso;
+  SharedPtr<RtShaderBindingTable> myAoSBT;
 
   SharedPtr<RtAccelerationStructure> myTLAS;
   eastl::vector<BlasData> myBlasDatas;
@@ -104,8 +106,16 @@ private:
   ImGuiContext* myImGuiContext = nullptr;
   bool myRenderRaster = false;
   bool myRenderAo = false;
-  int myMaxNumAccumulationFrames = 50;
-  int myMaxRecursionDepth = 2;
+  bool myAccumulate = true;
+  bool myHalfResRender = true;
+  bool mySampleSky = true;
+  float mySkyFallbackIntensity = 100.0f;
+  int myMaxRecursionDepth = 4;
+  int myLightInstanceIdx = 4;
+  float64 myLastTimeMs = 0.0;
   bool mySupportsRaytracing = false;
+  bool myLightEnabled = true;
+  glm::float3 myLightColor = glm::float3(1.0f);
+  float myLightStrength = 100.0f;
 };
 

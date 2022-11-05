@@ -5,6 +5,7 @@
 #include "fancy/resources/shaders/Encoding.h"
 #include "fancy/resources/shaders/common_types.h"
 #include "../sky/Common.hlsl"
+#include "random.hlsl"
 
 struct SkyConstants
 {
@@ -39,20 +40,18 @@ cbuffer Constants : register(b0, Space_LocalCBuffer)
   uint myFrameRandomSeed;
   uint myNumAccumulationFrames;
 
-  uint myRayHitGroupOffset;
   uint myLinearClampSamplerIndex;
   uint myMaxRecursionDepth;
+  uint myLightInstanceId;
+  uint myNumHaltonSamples;
+
+  float3 myLightEmission;
+  uint mySampleSky;
+
+  float3 mySkyFallbackEmission;
   uint _unused;
 
   SkyConstants mySkyConsts;
-};
-
-struct HitInfo
-{
-  float4 colorAndDistance;
-  uint4 myRngState;
-  uint myRecursionDepth;
-  uint myNumAoHits;
 };
 
 struct Attributes
@@ -127,6 +126,24 @@ VertexData LoadInterpolatedVertexData(uint aVertexBufferIndex, uint anIndexBuffe
   return returnData;
 }
 
+float3 GetUniformRandomDirectionInSphere(float2 aRand01)
+{
+	float phi = 2.0f * PI * aRand01.x;
+	float theta = 2.0f * acos(sqrt(1.0f - aRand01.y));
+	float3 dir = float3(sin(theta)*cos(phi), sin(theta)*sin(phi), cos(theta));
+	return dir;
+}
+
+
+float3 GetCosineWeightedHemisphereDirection(float2 aRand01, float3 aNormal, float3 aPoint) 
+{
+  // https://twitter.com/Atrix256/status/1239634566559576065?s=20&t=9dP5EskBwlVQM67QnrCKkg
+
+  //float3 target = aPoint + ;
+
+  return normalize(aNormal + GetUniformRandomDirectionInSphere(aRand01));
+}
+
 float3 GetRandomDirectionInSphere(float2 aRand01)
 {
   float phi = aRand01.x * 2 * PI;
@@ -134,22 +151,50 @@ float3 GetRandomDirectionInSphere(float2 aRand01)
   return float3(sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi));
 }
 
-float3x3 GetCoordinateFrame(float3 aNormal)
+void GetCoordinateFrame(float3 aNormal, out float3 tangentOut, out float3 bitangentOut)
 {
   float3 side = abs(aNormal.x) < 0.999 ? float3(1, 0, 0) : float3(0, 0, 1);
   float3 z = normalize(cross(-aNormal, -side));
   float3 x = cross(z, aNormal);
-  return float3x3(x, aNormal, z);
+  tangentOut = x;
+  bitangentOut = z;
 }
 
 float3 GetHemisphereDirection(float2 aRand11, float3 aNormal)
 {
-  float2 rand = aRand11;
-  float3 dir = float3(rand.x, 0.0, rand.y);
-  dir.y = sqrt(1.0 - dot(dir.xz, dir.xz));
+  float3 tangent;
+  float3 bitangent;
+  GetCoordinateFrame(aNormal, tangent, bitangent);
+  
+  return normalize( aNormal + tangent * aRand11.x + bitangent * aRand11.y );
+}
 
-  float3x3 coordinateFrame = GetCoordinateFrame(aNormal);
-  return normalize(mul(dir, coordinateFrame));
+float2 GetHaltonSample( uint index ) {
+  uint i = index % myNumHaltonSamples;
+  return theBuffers[mySampleBufferIndex].Load<float2>( i * sizeof(float2));
+}
+
+void GetPrimaryRay(float2 pixel, uint2 resolution, out float3 origin, out float3 dir)
+{
+  float2 vpLerp = float2(pixel) / resolution;
+  vpLerp.y = 1.0 - vpLerp.y;
+  origin = myNearPlaneCorner + myXAxis * vpLerp.x + myYAxis * vpLerp.y;
+  dir = normalize(origin - myCameraPos);
+}
+
+float3 GetLambertianBRDF(float3 diffuseReflectance, float3 N, float3 L) 
+{
+  return diffuseReflectance * dot(N, L) * (1.0f / PI);
+}
+
+float GetLambertianPDF( float3 N, float3 L ) 
+{
+  return dot(N, L) * (1.0f / PI);
+}
+
+float GetLuminance(float3 radiance) 
+{
+  return dot(radiance, float3(0.2126f, 0.7152f, 0.0722f));
 }
 
 #endif  // INC_RT_COMMON
