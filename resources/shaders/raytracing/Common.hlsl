@@ -134,13 +134,9 @@ float3 GetUniformRandomDirectionInSphere(float2 aRand01)
 	return dir;
 }
 
-
 float3 GetCosineWeightedHemisphereDirection(float2 aRand01, float3 aNormal, float3 aPoint) 
 {
   // https://twitter.com/Atrix256/status/1239634566559576065?s=20&t=9dP5EskBwlVQM67QnrCKkg
-
-  //float3 target = aPoint + ;
-
   return normalize(aNormal + GetUniformRandomDirectionInSphere(aRand01));
 }
 
@@ -169,6 +165,16 @@ float3 GetHemisphereDirection(float2 aRand11, float3 aNormal)
   return normalize( aNormal + tangent * aRand11.x + bitangent * aRand11.y );
 }
 
+float3 TransformToNormalFrame(float3 aNormal, float3 aDir) 
+{
+  float3 tangent;
+  float3 bitangent;
+  GetCoordinateFrame(aNormal, tangent, bitangent);
+
+  float3x3 tbn = float3x3(tangent, aNormal, bitangent);
+  return mul(tbn, aDir);
+}
+
 float2 GetHaltonSample( uint index ) {
   uint i = index % myNumHaltonSamples;
   return theBuffers[mySampleBufferIndex].Load<float2>( i * sizeof(float2));
@@ -182,19 +188,16 @@ void GetPrimaryRay(float2 pixel, uint2 resolution, out float3 origin, out float3
   dir = normalize(origin - myCameraPos);
 }
 
-float3 GetLambertianBRDF(float3 diffuseReflectance, float3 N, float3 L) 
-{
-  return diffuseReflectance * dot(N, L) * (1.0f / PI);
-}
-
-float GetLambertianPDF( float3 N, float3 L ) 
-{
-  return dot(N, L) * (1.0f / PI);
-}
-
 float GetLuminance(float3 radiance) 
 {
   return dot(radiance, float3(0.2126f, 0.7152f, 0.0722f));
+}
+
+float GetFresnelSchlick(float3 aNormal, float3 aView) 
+{
+  const float f0 = 0.04f; // Assuming dielectrics for now
+  float cosTheta = max( 0, dot(aNormal, aView) );
+  return saturate( f0 + (1.0f - f0) * pow(1.0f - cosTheta, 5.0f) );
 }
 
 #endif  // INC_RT_COMMON

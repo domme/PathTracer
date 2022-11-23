@@ -2,6 +2,7 @@
 #include "fancy/resources/shaders/GlobalResources.h"
 #include "Random.hlsl"
 #include "SampleSky.hlsl"
+#include "brdfSampling.hlsl"
 
 struct HitInfo
 {
@@ -46,7 +47,7 @@ void RayGen()
     float2 pixel = uPixel;
 
     float2 jitter = float2(GetRand01(rngState), GetRand01(rngState));
-    pixel += lerp(-0.5.xx, 0.5.xx, jitter);
+    //pixel += lerp(-0.5.xx, 0.5.xx, jitter);
     pixel = clamp(pixel, 0, resolution);
 
     float3 origin;
@@ -75,37 +76,60 @@ void RayGen()
             break;
         }
 
-        if (hitInfo.myHasHit)
-        {
-            // TODO: Evaluate local lighting
+        
+        // TODO: Evaluate local lighting
 
-            float3 brdf = GetLambertianBRDF( hitInfo.myColor, hitInfo.myHitNormal, -rayDesc.Direction );
-            float pdf = GetLambertianPDF( hitInfo.myHitNormal, -rayDesc.Direction );
+        // DEBUG values:
+        float specularStrength = 0.9f;
+        float specularPower = 100.0f;
 
-            transmission *= brdf / ( pdf > 0.0001f ? pdf : 1.0f);
-            luminance += transmission * hitInfo.myEmission; 
+        float2 randVec = float2(GetRand01(rngState), GetRand01(rngState));
+
+        float fresnel = GetFresnelSchlick( hitInfo.myHitNormal, -rayDesc.Direction );
+        float spec = fresnel;
+        float diffuse = (1.0f - fresnel) * GetLuminance(hitInfo.myColor);
+        float specRayProbability = spec / (max(0.0001f, (spec + diffuse)));
+        specRayProbability = clamp( specRayProbability, 0.1f, 0.9f );
+        if (GetRand01(rngState) < specRayProbability)
+        {   
+            float pdf;
+            float3 nextSampleDir = SampleModifiedPhong( randVec, hitInfo.myHitNormal, specularPower, pdf );
+            float3 brdf = fresnel * EvaluateModifiedPhong( hitInfo.myHitNormal, nextSampleDir, -rayDesc.Direction, specularStrength, specularPower );
+            transmission *= brdf / max(0.0001f, pdf);
+            transmission /= specRayProbability;
+            rayDesc.Direction = nextSampleDir;    
         }
+        else
+        {
+            float3 brdf = (1.0f - fresnel) * GetLambertianBRDF( hitInfo.myColor, hitInfo.myHitNormal, -rayDesc.Direction );
+            float pdf = GetLambertianPDF( hitInfo.myHitNormal, -rayDesc.Direction );
+            transmission *= brdf / max(0.0001f, pdf);
+            transmission /= (1.0f - specRayProbability);
+            rayDesc.Direction = GetCosineWeightedHemisphereDirection(randVec, hitInfo.myHitNormal, hitInfo.myHitPos);
+        }
+
+        luminance += transmission * hitInfo.myEmission; 
 
         // Check if ray should be terminated (russian roulette)
         const uint minBounces = 3;
         if (bounceIdx > minBounces) 
         {
-            float terminationProbability = min(0.95, GetRand01(rngState));
+            float terminationProbability = clamp(GetRand01(rngState), 0.001, 0.95);
             if (GetLuminance(transmission) < terminationProbability) {
                 break;
-            } else {
-                transmission /= terminationProbability;
+            }
+            else { 
+                transmission /= terminationProbability;  // Results in fireflies
             }
 
         }
         
-        float2 randVec = float2(GetRand01(rngState), GetRand01(rngState));
         rayDesc.Origin = hitInfo.myHitPos;
-        rayDesc.Direction = GetCosineWeightedHemisphereDirection(randVec, hitInfo.myHitNormal, hitInfo.myHitPos);
         rayDesc.TMin = 0.001;
     }
 
-    if (isnan(luminance.x) || isnan(luminance.y) || isnan(luminance.z))
+    if (isnan(luminance.x) || isnan(luminance.y) || isnan(luminance.z) ||
+        isinf(luminance.x) || isinf(luminance.y) || isinf(luminance.z))
         luminance = float3(0, 0, 0);
 
     float4 accumLight = theRwTextures2D[myOutTexIndex][pixel] * myNumAccumulationFrames;
