@@ -117,5 +117,6 @@ private:
   bool myLightEnabled = true;
   glm::float3 myLightColor = glm::float3(1.0f);
   float myLightStrength = 100.0f;
+  float myPhongSpecularPower = 10.0f;
 };
 

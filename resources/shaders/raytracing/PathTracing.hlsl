@@ -47,7 +47,7 @@ void RayGen()
     float2 pixel = uPixel;
 
     float2 jitter = float2(GetRand01(rngState), GetRand01(rngState));
-    //pixel += lerp(-0.5.xx, 0.5.xx, jitter);
+    pixel += lerp(-0.5.xx, 0.5.xx, jitter);
     pixel = clamp(pixel, 0, resolution);
 
     float3 origin;
@@ -81,21 +81,18 @@ void RayGen()
 
         // DEBUG values:
         float specularStrength = 0.9f;
-        float specularPower = 100.0f;
-
-        float2 randVec = float2(GetRand01(rngState), GetRand01(rngState));
+        float specularPower = myPhongSpecularPower;
 
         float fresnel = GetFresnelSchlick( hitInfo.myHitNormal, -rayDesc.Direction );
-        float spec = fresnel;
-        float diffuse = (1.0f - fresnel) * GetLuminance(hitInfo.myColor);
-        float specRayProbability = spec / (max(0.0001f, (spec + diffuse)));
-        specRayProbability = clamp( specRayProbability, 0.1f, 0.9f );
+        float specRayProbability = EstimateSpecularRayProbability( specularStrength, hitInfo.myColor, fresnel );
+        
         if (GetRand01(rngState) < specRayProbability)
         {   
             float pdf;
-            float3 nextSampleDir = SampleModifiedPhong( randVec, hitInfo.myHitNormal, specularPower, pdf );
+            float3 nextSampleDir = SampleModifiedPhong( float2(GetRand01(rngState), GetRand01(rngState)), hitInfo.myHitNormal, specularPower, pdf );
             float3 brdf = fresnel * EvaluateModifiedPhong( hitInfo.myHitNormal, nextSampleDir, -rayDesc.Direction, specularStrength, specularPower );
-            transmission *= brdf / max(0.0001f, pdf);
+            
+            transmission *= brdf / max( 0.01f, pdf );
             transmission /= specRayProbability;
             rayDesc.Direction = nextSampleDir;    
         }
@@ -103,14 +100,15 @@ void RayGen()
         {
             float3 brdf = (1.0f - fresnel) * GetLambertianBRDF( hitInfo.myColor, hitInfo.myHitNormal, -rayDesc.Direction );
             float pdf = GetLambertianPDF( hitInfo.myHitNormal, -rayDesc.Direction );
-            transmission *= brdf / max(0.0001f, pdf);
+            transmission *= brdf / pdf;
             transmission /= (1.0f - specRayProbability);
-            rayDesc.Direction = GetCosineWeightedHemisphereDirection(randVec, hitInfo.myHitNormal, hitInfo.myHitPos);
+            rayDesc.Direction = GetCosineWeightedHemisphereDirection(float2(GetRand01(rngState), GetRand01(rngState)), hitInfo.myHitNormal, hitInfo.myHitPos);
         }
 
         luminance += transmission * hitInfo.myEmission; 
 
         // Check if ray should be terminated (russian roulette)
+        /*
         const uint minBounces = 3;
         if (bounceIdx > minBounces) 
         {
@@ -123,6 +121,7 @@ void RayGen()
             }
 
         }
+        */
         
         rayDesc.Origin = hitInfo.myHitPos;
         rayDesc.TMin = 0.001;

@@ -49,7 +49,7 @@ cbuffer Constants : register(b0, Space_LocalCBuffer)
   uint mySampleSky;
 
   float3 mySkyFallbackEmission;
-  uint _unused;
+  float myPhongSpecularPower;
 
   SkyConstants mySkyConsts;
 };

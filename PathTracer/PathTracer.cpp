@@ -418,6 +418,9 @@ void PathTracer::Update()
       }
       else
       {
+        if (ImGui::SliderFloat("Phong Spec Power", &myPhongSpecularPower, 0.0f, 1000.0f))
+          RestartAccumulation();
+
         if (ImGui::InputInt("Max Recursion Depth", &myMaxRecursionDepth, 1))
           RestartAccumulation();
 
@@ -620,7 +623,7 @@ void PathTracer::RenderRT(CommandList* ctx)
     uint mySampleSky;
 
     glm::float3 mySkyFallbackEmission;
-    uint _unused;
+    float myPhongSpecularPower;
 
     SkyConstants mySkyConsts;
 
@@ -641,6 +644,7 @@ void PathTracer::RenderRT(CommandList* ctx)
   rtConsts.myLightEmission = myLightEnabled ? myLightColor * myLightStrength : glm::float3(0.0f);
   rtConsts.mySampleSky = mySampleSky ? 1u : 0u;
   rtConsts.mySkyFallbackEmission = glm::float3(mySkyFallbackIntensity);
+  rtConsts.myPhongSpecularPower = myPhongSpecularPower;
   rtConsts.myFrameRandomSeed = (uint)Time::ourFrameIdx;
   rtConsts.myNumAccumulationFrames = myNumAccumulationFrames++;
   rtConsts.myLinearClampSamplerIndex = RenderCore::ourLinearClampSampler->GetGlobalDescriptorIndex();
