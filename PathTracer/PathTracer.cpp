@@ -8,7 +8,10 @@
 #include "Common/Window.h"
 #include "Common/StaticString.h"
 #include "Debug/Profiler.h"
+#include "IO/AssetManager.h"
+#include "IO/ImageLoader.h"
 #include "IO/MeshImporter.h"
+#include "IO/PathService.h"
 #include "Rendering/CommandList.h"
 #include "Rendering/DepthStencilState.h"
 #include "Rendering/GraphicsResources.h"
@@ -26,6 +29,9 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   , myImGuiContext(ImGui::CreateContext())
 {
   ImGuiRendering::Init(myRenderOutput);
+
+  // DEBUG: Test dds loading
+  myDdsTestSrv = myAssetManager->LoadTexture("resources/textures/M_Trim_Inst_0_BaseColor.dds", AssetManager::NO_MIP_GENERATION);
 
   mySupportsRaytracing = RenderCore::GetPlatformCaps().mySupportsRaytracing;
 
@@ -377,6 +383,8 @@ void PathTracer::Update()
   float64 frameTime = msNow - myLastTimeMs;
   myLastTimeMs = msNow;
   ImGui::Text("Frame Time: %.3f ms", (float)frameTime);
+
+  myDdsDebugImage.Update(myDdsTestSrv.get(), "DDS Debug Image");
 
   if (ImGui::Checkbox("Render Half Res", &myHalfResRender))
   {

@@ -98,6 +98,8 @@ private:
   SharedPtr<TextureView> myDepthStencilDsv;
   SharedPtr<DepthStencilState> myDepthTestOff;
 
+  SharedPtr<TextureView> myDdsTestSrv;
+
   float myAoDistance = 1.0f;
   uint myNumAccumulationFrames = 0u;
   bool myAccumulationNeedsClear = true;
@@ -118,5 +120,7 @@ private:
   glm::float3 myLightColor = glm::float3(1.0f);
   float myLightStrength = 100.0f;
   float myPhongSpecularPower = 10.0f;
+
+  ImGuiDebugImage myDdsDebugImage;
 };
 

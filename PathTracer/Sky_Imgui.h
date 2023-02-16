@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DebugImage.h"
 #include "Common/FancyCoreDefines.h"
 
 namespace Fancy
@@ -15,17 +16,9 @@ public:
 	bool Update(Sky* aSky);
 	
 private:
-	struct ImGuiDebugImage
-	{
-    Fancy::TextureView* myTexture = nullptr;
-		float myZoom = 1.0f;
-
-		void Update(Fancy::TextureView* aTexture, const char* aName);
-	};
-
 	bool myImgui_windowOpen = false;
 	bool myImgui_showTransmittanceLut = false;
-	ImGuiDebugImage myImgui_TransmittanceLutImg;
-	ImGuiDebugImage myImgui_SkyViewLutImg;
+  Fancy::ImGuiDebugImage myImgui_TransmittanceLutImg;
+  Fancy::ImGuiDebugImage myImgui_SkyViewLutImg;
 };
 
