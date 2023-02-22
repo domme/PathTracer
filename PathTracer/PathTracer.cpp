@@ -101,7 +101,7 @@ glm::uvec2 GetOffsetSize(const VertexInputLayoutProperties& someVertexProps, Ver
   uint offset = 0;
   for (const VertexInputAttributeDesc& attribute : someVertexProps.myAttributes)
   {
-    uint size = DataFormatInfo::GetFormatInfo(attribute.myFormat).mySizeBytes;
+    uint size = BITS_TO_BYTES(DataFormatInfo::GetFormatInfo(attribute.myFormat).myBitsPerPixel);
     if (attribute.mySemantic == aSemantic && attribute.mySemanticIndex == aSemanticIndex)
     {
       return { offset, size };
