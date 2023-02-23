@@ -121,6 +121,6 @@ private:
   float myLightStrength = 100.0f;
   float myPhongSpecularPower = 10.0f;
 
-  ImGuiDebugImage myDdsDebugImage;
+  UniquePtr<ImGuiMippedDebugImage> myDdsDebugImage;
 };
 

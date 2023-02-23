@@ -33,6 +33,9 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   // DEBUG: Test dds loading
   myDdsTestSrv = myAssetManager->LoadTexture("resources/textures/M_Trim_Inst_0_BaseColor.dds", AssetManager::NO_MIP_GENERATION);
 
+  SharedPtr<Texture> tex = myDdsTestSrv->GetTexturePtr();
+  myDdsDebugImage.reset(new ImGuiMippedDebugImage(tex, "DDS Debug Image"));
+
   mySupportsRaytracing = RenderCore::GetPlatformCaps().mySupportsRaytracing;
 
   DepthStencilStateProperties dsProps;
@@ -384,7 +387,9 @@ void PathTracer::Update()
   myLastTimeMs = msNow;
   ImGui::Text("Frame Time: %.3f ms", (float)frameTime);
 
-  myDdsDebugImage.Update(myDdsTestSrv.get(), "DDS Debug Image");
+  ImGui::Begin("DDS Test");
+  myDdsDebugImage->Update();
+  ImGui::End();
 
   if (ImGui::Checkbox("Render Half Res", &myHalfResRender))
   {
