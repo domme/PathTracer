@@ -31,10 +31,10 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   ImGuiRendering::Init(myRenderOutput);
 
   // DEBUG: Test dds loading
-  myDdsTestSrv = myAssetManager->LoadTexture("resources/textures/M_Trim_Inst_0_BaseColor.dds", AssetManager::NO_MIP_GENERATION);
+  // myDdsTestSrv = myAssetManager->LoadTexture("resources/textures/M_Trim_Inst_0_BaseColor.dds", AssetManager::NO_MIP_GENERATION);
 
-  SharedPtr<Texture> tex = myDdsTestSrv->GetTexturePtr();
-  myDdsDebugImage.reset(new ImGuiMippedDebugImage(tex, "DDS Debug Image"));
+  // SharedPtr<Texture> tex = myDdsTestSrv->GetTexturePtr();
+  // myDdsDebugImage.reset(new ImGuiMippedDebugImage(tex, "DDS Debug Image"));
 
   mySupportsRaytracing = RenderCore::GetPlatformCaps().mySupportsRaytracing;
 
@@ -67,7 +67,8 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 
   SceneData sceneData;
   MeshImporter importer;
-  const bool importSuccess = importer.Import("resources/models/CornellBox.obj", vertexAttributes, sceneData);
+  // const bool importSuccess = importer.Import("resources/models/CornellBox.obj", vertexAttributes, sceneData);
+  const bool importSuccess = importer.Import("resources/models/SunTemple_v4/SunTemple/SunTemple_Reduced.fbx", vertexAttributes, sceneData);
   ASSERT(importSuccess);
   
   if (mySupportsRaytracing)
@@ -75,10 +76,11 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 
   myScene = eastl::make_shared<Scene>(sceneData, myAssetManager.get());
 
-  myCamera.myPosition = glm::float3(1.0f, 102.0f, -30.0f);
+  myCamera.myPosition = glm::float3(-13.0f, 513.7f, -1191.5f);
+  // myCamera.myPosition = glm::float3(1.0f, 102.0f, -30.0f);
   myCamera.myOrientation = glm::quat_cast(glm::lookAt(glm::float3(0.0f, 0.0f, 10.0f), glm::float3(0.0f, 0.0f, 0.0f), glm::float3(0.0f, 1.0f, 0.0f)));
 
-  myCameraController.myMoveSpeed = 5.0f;
+  myCameraController.myMoveSpeed = 50.0f;
 
   myCamera.myFovDeg = 60.0f;
   myCamera.myNear = 1.0f;
@@ -387,9 +389,9 @@ void PathTracer::Update()
   myLastTimeMs = msNow;
   ImGui::Text("Frame Time: %.3f ms", (float)frameTime);
 
-  ImGui::Begin("DDS Test");
-  myDdsDebugImage->Update();
-  ImGui::End();
+  // ImGui::Begin("DDS Test");
+  // myDdsDebugImage->Update();
+  // ImGui::End();
 
   if (ImGui::Checkbox("Render Half Res", &myHalfResRender))
   {
@@ -492,6 +494,7 @@ void PathTracer::Render()
   RenderCore::ExecuteAndFreeCommandList(ctx);
   
   ImGui::Render();
+  ImGuiRendering::RenderDrawLists(ImGui::GetDrawData());
 }
 
 void PathTracer::RenderRaster(CommandList* ctx)

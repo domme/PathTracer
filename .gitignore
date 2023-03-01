@@ -40,3 +40,6 @@ _build_temp/*
 PathTracer/imgui.ini
 
 PathTracer/pathtracer_runtimedependencies.txt
+
+# All subfolders in models/. Subfolders there will likely mean large data that should be downloaded elsewhere
+resources/models/*/
