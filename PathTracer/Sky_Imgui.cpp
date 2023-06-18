@@ -8,7 +8,8 @@
 
 bool Sky_Imgui::Update(Sky* aSky)
 {
-	ImGui::Begin("Sky", &myImgui_windowOpen);
+	myImgui_settingsChanged = false;
+	// ImGui::Begin("Sky", &myImgui_windowOpen);
 
 	myImgui_TransmittanceLutImg.Update(aSky->myTransmittanceLutRead.get(), "Transmittance LUT");
 	myImgui_SkyViewLutImg.Update(aSky->mySkyViewLutRead.get(), "Sky-View LUT");
@@ -35,9 +36,15 @@ bool Sky_Imgui::Update(Sky* aSky)
 	skyParamsChanged |= ImGui::DragFloat("Mie PhaseG", &aSky->myAtmosphereParams.MiePhaseG);
 	skyParamsChanged |= ImGui::DragFloat3("Mie Absorption", &aSky->myAtmosphereParams.MieAbsorption[0]);
 
-	ImGui::End();
+	// ImGui::End();
 
+	myImgui_settingsChanged = skyParamsChanged;
 	return skyParamsChanged;
+}
+
+bool Sky_Imgui::HaveSettingsChanged()
+{
+	return myImgui_settingsChanged;
 }
 
 

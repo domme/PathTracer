@@ -5,6 +5,7 @@
 #include "Sky_Imgui.h"
 #include "Common/Application.h"
 #include "Common/Ptr.h"
+#include "DebugTextureList.h"
 
 class Sky;
 
@@ -60,6 +61,7 @@ public:
     const Fancy::RenderPlatformProperties& someRenderProperties,
     const Fancy::WindowParameters& someWindowParams);
 
+  void LoadScene(const char* aPath, const glm::float3& aCamPos);
   void InitSky();
   void InitRtScene(const SceneData& aScene);
   void InitSampleSequences();
@@ -78,6 +80,9 @@ private:
   void RestartAccumulation();
   bool CameraHasChanged();
 
+  void UpdateMainMenuBar();
+  void UpdatePathTracingSettings();
+
   void RenderRaster(CommandList* ctx);
   void RenderRT(CommandList* ctx);
   void TonemapComposit(CommandList* ctx);
@@ -90,7 +95,7 @@ private:
   SharedPtr<ShaderPipeline> myTonemapCompositShader;
   SharedPtr<ShaderPipeline> myClearTextureShader;
 
-  RaytracingScene myRtScene;
+  UniquePtr<RaytracingScene> myRtScene;
 
   SharedPtr<TextureView> myHdrLightTexRtv;
   SharedPtr<TextureView> myHdrLightTexWrite;
@@ -122,5 +127,6 @@ private:
   float myPhongSpecularPower = 10.0f;
 
   UniquePtr<ImGuiMippedDebugImage> myDdsDebugImage;
+  DebugTextureList myTextureList;
 };
 

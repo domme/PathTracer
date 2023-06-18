@@ -8,10 +8,11 @@
 #include "Common/Window.h"
 #include "Common/StaticString.h"
 #include "Debug/Profiler.h"
-#include "IO/AssetManager.h"
+#include "IO/Assets.h"
 #include "IO/ImageLoader.h"
 #include "IO/MeshImporter.h"
 #include "IO/PathService.h"
+#include "IO/Scene.h"
 #include "Rendering/CommandList.h"
 #include "Rendering/DepthStencilState.h"
 #include "Rendering/GraphicsResources.h"
@@ -23,18 +24,40 @@
 
 using namespace Fancy;
 
+static float64 SampleTimeMs()
+{
+  const std::chrono::duration<float64, std::milli> now(std::chrono::system_clock::now().time_since_epoch());
+  return now.count();
+}
+
+struct SceneLoadInfo
+{
+  eastl::fixed_string<char, 64, false> myDisplayName;
+  eastl::fixed_string<char, 256, false> myPath;
+  glm::float3 myCamPos = glm::float3(0.0f);
+};
+
+SceneLoadInfo sceneLoadInfos[] = {
+  {
+    "Cornell Box",
+    "resources/models/CornellBox.obj",
+    glm::float3(1.0f, 102.0f, -30.0f)
+  },
+  {
+    "Epic Sun Temple",
+    "resources/models/SunTemple_v4/SunTemple/SunTemple_Reduced.fbx",
+    glm::float3(-13.0f, 513.7f, -1191.5f)
+  },
+};
+
+
+
 PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, uint aNumArguments, const char* aName,
   const Fancy::RenderPlatformProperties& someRenderProperties, const Fancy::WindowParameters& someWindowParams)
   : Application(anInstanceHandle, someArguments, aNumArguments, aName, "../../../../", someRenderProperties, someWindowParams)
   , myImGuiContext(ImGui::CreateContext())
 {
   ImGuiRendering::Init(myRenderOutput);
-
-  // DEBUG: Test dds loading
-  // myDdsTestSrv = myAssetManager->LoadTexture("resources/textures/M_Trim_Inst_0_BaseColor.dds", AssetManager::NO_MIP_GENERATION);
-
-  // SharedPtr<Texture> tex = myDdsTestSrv->GetTexturePtr();
-  // myDdsDebugImage.reset(new ImGuiMippedDebugImage(tex, "DDS Debug Image"));
 
   mySupportsRaytracing = RenderCore::GetPlatformCaps().mySupportsRaytracing;
 
@@ -59,6 +82,13 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   myClearTextureShader = RenderCore::CreateComputeShaderPipeline("resources/shaders/clear_texture.hlsl");
   ASSERT(myClearTextureShader);
 
+  InitSky();
+
+  LoadScene(sceneLoadInfos[0].myPath.c_str(), sceneLoadInfos[0].myCamPos);
+}
+
+void PathTracer::LoadScene(const char* aPath, const glm::float3& aCamPos)
+{
   eastl::fixed_vector<VertexShaderAttributeDesc, 16> vertexAttributes = {
     { VertexAttributeSemantic::POSITION, 0, DataFormat::RGB_32F },
     { VertexAttributeSemantic::NORMAL, 0, DataFormat::RGB_32F },
@@ -67,17 +97,18 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
 
   SceneData sceneData;
   MeshImporter importer;
-  // const bool importSuccess = importer.Import("resources/models/CornellBox.obj", vertexAttributes, sceneData);
-  const bool importSuccess = importer.Import("resources/models/SunTemple_v4/SunTemple/SunTemple_Reduced.fbx", vertexAttributes, sceneData);
-  ASSERT(importSuccess);
-  
+  const bool importSuccess = importer.Import(aPath, vertexAttributes, sceneData);
+  if ( !importSuccess )
+  {
+    Log("Failed importing scene %s", aPath);
+  }
+
   if (mySupportsRaytracing)
     InitRtScene(sceneData);
 
-  myScene = eastl::make_shared<Scene>(sceneData, myAssetManager.get());
+  myScene = eastl::make_shared<Scene>(sceneData);
 
-  myCamera.myPosition = glm::float3(-13.0f, 513.7f, -1191.5f);
-  // myCamera.myPosition = glm::float3(1.0f, 102.0f, -30.0f);
+  myCamera.myPosition = aCamPos;
   myCamera.myOrientation = glm::quat_cast(glm::lookAt(glm::float3(0.0f, 0.0f, 10.0f), glm::float3(0.0f, 0.0f, 0.0f), glm::float3(0.0f, 1.0f, 0.0f)));
 
   myCameraController.myMoveSpeed = 50.0f;
@@ -85,14 +116,12 @@ PathTracer::PathTracer(HINSTANCE anInstanceHandle, const char** someArguments, u
   myCamera.myFovDeg = 60.0f;
   myCamera.myNear = 1.0f;
   myCamera.myFar = 10000.0f;
-  myCamera.myWidth = (float) myRenderOutput->GetWindow()->GetWidth();
-  myCamera.myHeight = (float) myRenderOutput->GetWindow()->GetHeight();
+  myCamera.myWidth = (float)myRenderOutput->GetWindow()->GetWidth();
+  myCamera.myHeight = (float)myRenderOutput->GetWindow()->GetHeight();
   myCamera.myIsOrtho = false;
 
   myCamera.UpdateView();
   myCamera.UpdateProjection();
-
-  InitSky();
 }
 
 void PathTracer::InitSky()
@@ -120,6 +149,8 @@ glm::uvec2 GetOffsetSize(const VertexInputLayoutProperties& someVertexProps, Ver
 
 void PathTracer::InitRtScene(const SceneData& aScene)
 {
+  myRtScene.reset(new RaytracingScene());
+
   for (uint iMesh = 0u; iMesh < (uint) aScene.myMeshes.size(); ++iMesh)
   {
     const MeshData& mesh = aScene.myMeshes[iMesh];
@@ -194,7 +225,7 @@ void PathTracer::InitRtScene(const SceneData& aScene)
       dstTrianglePtr += VECTOR_BYTESIZE(meshPart.myIndexData);
     }
 
-    BlasData& blasData = myRtScene.myBlasDatas.push_back();
+    BlasData& blasData = myRtScene->myBlasDatas.push_back();
 
     GpuBufferProperties bufferProps;
     bufferProps.myBindFlags = (uint) GpuBufferBindFlags::SHADER_BUFFER;
@@ -231,13 +262,13 @@ void PathTracer::InitRtScene(const SceneData& aScene)
 
     PerInstanceData& perInstanceData = perInstanceDatas.push_back();
     perInstanceData.myMaterialIndex = instance.myMaterialIndex;
-    perInstanceData.myIndexBufferDescriptorIndex = myRtScene.myBlasDatas[instance.myMeshIndex].myTriangleIndices->GetGlobalDescriptorIndex();
-    perInstanceData.myVertexBufferDescriptorIndex = myRtScene.myBlasDatas[instance.myMeshIndex].myVertexData->GetGlobalDescriptorIndex();
+    perInstanceData.myIndexBufferDescriptorIndex = myRtScene->myBlasDatas[instance.myMeshIndex].myTriangleIndices->GetGlobalDescriptorIndex();
+    perInstanceData.myVertexBufferDescriptorIndex = myRtScene->myBlasDatas[instance.myMeshIndex].myVertexData->GetGlobalDescriptorIndex();
 
     RtAccelerationStructureInstanceData& instanceData = instanceDatas.push_back();
     instanceData.myInstanceId = iInstance;
     instanceData.mySbtHitGroupOffset = 0;
-    instanceData.myInstanceBLAS = myRtScene.myBlasDatas[instance.myMeshIndex].myBLAS;
+    instanceData.myInstanceBLAS = myRtScene->myBlasDatas[instance.myMeshIndex].myBLAS;
     instanceData.myInstanceMask = UINT8_MAX;
     instanceData.myTransform = instance.myTransform;
     instanceData.myFlags = RT_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE | RT_INSTANCE_FLAG_FORCE_OPAQUE;
@@ -249,7 +280,7 @@ void PathTracer::InitRtScene(const SceneData& aScene)
   bufferProps.myElementSizeBytes = sizeof(PerInstanceData);
   GpuBufferViewProperties bufferViewProps;
   bufferViewProps.myIsRaw = true;
-  myRtScene.myInstanceData = RenderCore::CreateBufferView(bufferProps, bufferViewProps, "Rt per instance data", perInstanceDatas.data());
+  myRtScene->myInstanceData = RenderCore::CreateBufferView(bufferProps, bufferViewProps, "Rt per instance data", perInstanceDatas.data());
 
   struct MaterialData
   {
@@ -269,9 +300,9 @@ void PathTracer::InitRtScene(const SceneData& aScene)
   bufferProps.myElementSizeBytes = sizeof(MaterialData);
   bufferProps.myNumElements = materialDatas.size();
   bufferViewProps.myIsRaw = true;
-  myRtScene.myMaterialData = RenderCore::CreateBufferView(bufferProps, bufferViewProps, "Rt material buffer", materialDatas.data());
+  myRtScene->myMaterialData = RenderCore::CreateBufferView(bufferProps, bufferViewProps, "Rt material buffer", materialDatas.data());
 
-  myRtScene.myTLAS = RenderCore::CreateRtTopLevelAccelerationStructure(instanceDatas.data(), (uint) instanceDatas.size(), 0, "TLAS");
+  myRtScene->myTLAS = RenderCore::CreateRtTopLevelAccelerationStructure(instanceDatas.data(), (uint) instanceDatas.size(), 0, "TLAS");
 
   // Ao RT pipeline + SBT
   {
@@ -284,16 +315,16 @@ void PathTracer::InitRtScene(const SceneData& aScene)
     rtPipelineProps.SetMaxAttributeSize(32u);
     rtPipelineProps.SetMaxPayloadSize(128u);
     rtPipelineProps.SetMaxRecursionDepth(RenderCore::GetPlatformCaps().myRaytracingMaxRecursionDepth);
-    myRtScene.myAoRtPso = RenderCore::CreateRtPipelineState(rtPipelineProps);
+    myRtScene->myAoRtPso = RenderCore::CreateRtPipelineState(rtPipelineProps);
 
     RtShaderBindingTableProperties sbtProps;
     sbtProps.myNumRaygenShaderRecords = 1;
     sbtProps.myNumMissShaderRecords = 5;
     sbtProps.myNumHitShaderRecords = 5;
-    myRtScene.myAoSBT = RenderCore::CreateRtShaderTable(sbtProps);
-    myRtScene.myAoSBT->AddShaderRecord(myRtScene.myAoRtPso->GetRayGenShaderIdentifier(raygenIdx));
-    myRtScene.myAoSBT->AddShaderRecord(myRtScene.myAoRtPso->GetHitShaderIdentifier(hitIdxPrimary));
-    myRtScene.myAoSBT->AddShaderRecord(myRtScene.myAoRtPso->GetHitShaderIdentifier(hitIdxAo));
+    myRtScene->myAoSBT = RenderCore::CreateRtShaderTable(sbtProps);
+    myRtScene->myAoSBT->AddShaderRecord(myRtScene->myAoRtPso->GetRayGenShaderIdentifier(raygenIdx));
+    myRtScene->myAoSBT->AddShaderRecord(myRtScene->myAoRtPso->GetHitShaderIdentifier(hitIdxPrimary));
+    myRtScene->myAoSBT->AddShaderRecord(myRtScene->myAoRtPso->GetHitShaderIdentifier(hitIdxAo));
   }
 
   // PathTracing RT pipeline + SBT
@@ -305,15 +336,15 @@ void PathTracer::InitRtScene(const SceneData& aScene)
     rtPipelineProps.SetMaxAttributeSize(32u);
     rtPipelineProps.SetMaxPayloadSize(128u);
     rtPipelineProps.SetMaxRecursionDepth(RenderCore::GetPlatformCaps().myRaytracingMaxRecursionDepth);
-    myRtScene.myRtPso = RenderCore::CreateRtPipelineState(rtPipelineProps);
+    myRtScene->myRtPso = RenderCore::CreateRtPipelineState(rtPipelineProps);
 
     RtShaderBindingTableProperties sbtProps;
     sbtProps.myNumRaygenShaderRecords = 1;
     sbtProps.myNumMissShaderRecords = 5;
     sbtProps.myNumHitShaderRecords = 5;
-    myRtScene.mySBT = RenderCore::CreateRtShaderTable(sbtProps);
-    myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetRayGenShaderIdentifier(raygenIdx));
-    myRtScene.mySBT->AddShaderRecord(myRtScene.myRtPso->GetHitShaderIdentifier(hitIdx));
+    myRtScene->mySBT = RenderCore::CreateRtShaderTable(sbtProps);
+    myRtScene->mySBT->AddShaderRecord(myRtScene->myRtPso->GetRayGenShaderIdentifier(raygenIdx));
+    myRtScene->mySBT->AddShaderRecord(myRtScene->myRtPso->GetHitShaderIdentifier(hitIdx));
   }
   
 
@@ -335,7 +366,7 @@ void PathTracer::InitSampleSequences()
   props.myNumElements = sampleCount;
   GpuBufferViewProperties viewProps;
   viewProps.myIsRaw = true;
-  myRtScene.myHaltonSamples = RenderCore::CreateBufferView(props, viewProps, "Halton samples", someSamples.data());
+  myRtScene->myHaltonSamples = RenderCore::CreateBufferView(props, viewProps, "Halton samples", someSamples.data());
 }
 
 PathTracer::~PathTracer()
@@ -364,23 +395,47 @@ bool PathTracer::CameraHasChanged()
   return false;
 }
 
-void PathTracer::BeginFrame()
+void PathTracer::UpdateMainMenuBar()
 {
-  Application::BeginFrame();
-  ImGuiRendering::NewFrame();
+  if (ImGui::BeginMainMenuBar())
+  {
+    if( ImGui::BeginMenu("Load Scene"))
+    {
+      for ( int i = 0; i < ARRAY_LENGTH(sceneLoadInfos); ++i )
+      {
+        const SceneLoadInfo& loadInfo = sceneLoadInfos[i];
+        if (ImGui::MenuItem(loadInfo.myDisplayName.c_str()))
+        {
+          LoadScene(loadInfo.myPath.c_str(), loadInfo.myCamPos);
+        }
+      }
+      ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Sky"))
+    {
+      mySky_Imgui.Update(mySky.get());
+      ImGui::EndMenu();
+    }
+
+    if ( ImGui::BeginMenu( "PathTracing" ))
+    {
+      UpdatePathTracingSettings();
+      ImGui::EndMenu();
+    }
+
+    if ( ImGui::BeginMenu("Texture List"))
+    {
+      myTextureList.Update();
+      ImGui::EndMenu();
+    }
+
+    ImGui::EndMainMenuBar();
+  }
 }
 
-static float64 SampleTimeMs()
+void PathTracer::UpdatePathTracingSettings()
 {
-  const std::chrono::duration<float64, std::milli> now(std::chrono::system_clock::now().time_since_epoch());
-  return now.count();
-}
-
-void PathTracer::Update()
-{
-  Application::Update();
-  bool skyParamsChanged = mySky_Imgui.Update(mySky.get());
-
   ImGui::Text("View Pos: %.3f, %.3f, %.3f", myCamera.myPosition.x, myCamera.myPosition.y, myCamera.myPosition.z);
   ImGui::SliderFloat("Move Speed", &myCameraController.myMoveSpeed, 1.0f, 10000.0f);
 
@@ -389,16 +444,12 @@ void PathTracer::Update()
   myLastTimeMs = msNow;
   ImGui::Text("Frame Time: %.3f ms", (float)frameTime);
 
-  // ImGui::Begin("DDS Test");
-  // myDdsDebugImage->Update();
-  // ImGui::End();
-
   if (ImGui::Checkbox("Render Half Res", &myHalfResRender))
   {
     UpdateOutputTexture();
     RestartAccumulation();
   }
-   
+
   if (mySupportsRaytracing)
   {
     if (ImGui::Checkbox("Render Raster", &myRenderRaster) && !myRenderRaster)
@@ -408,7 +459,7 @@ void PathTracer::Update()
     {
       if (ImGui::Checkbox("Render AO", &myRenderAo))
         RestartAccumulation();
-      
+
       if (ImGui::Checkbox("Accumulate", &myAccumulate))
         RestartAccumulation();
 
@@ -420,12 +471,9 @@ void PathTracer::Update()
         if (ImGui::SliderFloat("Sky Fallback Intensity", &mySkyFallbackIntensity, 0.0f, 1000.0f))
           RestartAccumulation();
       }
-
-      if (!myAccumulate)
-        RestartAccumulation(); // Always render frame 0 only
-
+      
       ImGui::Text("Accumulation Frame %i", myNumAccumulationFrames);
-  
+
       if (myRenderAo)
       {
         if (ImGui::DragFloat("Ao Distance", &myAoDistance))
@@ -451,19 +499,38 @@ void PathTracer::Update()
             RestartAccumulation();
 
           float col[3] = { myLightColor.x, myLightColor.y, myLightColor.z };
-          if(ImGui::ColorPicker3("Light Color", col ))
+          if (ImGui::ColorPicker3("Light Color", col))
           {
             myLightColor = glm::float3(col[0], col[1], col[2]);
             RestartAccumulation();
           }
-
-          
         }
       }
-
-      if (CameraHasChanged() || skyParamsChanged)
-        RestartAccumulation();
     }
+  }
+}
+
+
+void PathTracer::BeginFrame()
+{
+  Application::BeginFrame();
+  ImGuiRendering::NewFrame();
+}
+
+void PathTracer::Update()
+{
+  Application::Update();
+
+  UpdateMainMenuBar();
+
+  if (!myAccumulate)
+  {
+    RestartAccumulation(); // Always render frame 0 only
+  }
+
+  if (CameraHasChanged() || mySky_Imgui.HaveSettingsChanged())
+  {
+    RestartAccumulation();
   }
 
   myLastViewMat = myCamera.myViewProj;
@@ -584,8 +651,8 @@ void PathTracer::RenderRT(CommandList* ctx)
     myNumAccumulationFrames = 0u;
   }
   
-  RtPipelineState* rtPso = myRenderAo ? myRtScene.myAoRtPso.get() : myRtScene.myRtPso.get();
-  RtShaderBindingTable* rtSbt = myRenderAo ? myRtScene.myAoSBT.get() : myRtScene.mySBT.get();
+  RtPipelineState* rtPso = myRenderAo ? myRtScene->myAoRtPso.get() : myRtScene->myRtPso.get();
+  RtShaderBindingTable* rtSbt = myRenderAo ? myRtScene->myAoSBT.get() : myRtScene->mySBT.get();
   ctx->SetRaytracingPipelineState(rtPso);
 
   eastl::fixed_vector<glm::float3, 4> nearPlaneVertices;
@@ -650,13 +717,13 @@ void PathTracer::RenderRT(CommandList* ctx)
   rtConsts.myXAxis = nearPlaneVertices[1] - nearPlaneVertices[0];
   rtConsts.myYAxis = nearPlaneVertices[3] - nearPlaneVertices[0];
   rtConsts.myOutTexIndex = myHdrLightTexWrite->GetGlobalDescriptorIndex();
-  rtConsts.myAsIndex = myRtScene.myTLAS->GetBufferRead()->GetGlobalDescriptorIndex();
+  rtConsts.myAsIndex = myRtScene->myTLAS->GetBufferRead()->GetGlobalDescriptorIndex();
   rtConsts.myCameraPos = myCamera.myPosition;
-  rtConsts.myInstanceDataBufferIndex = myRtScene.myInstanceData->GetGlobalDescriptorIndex();
-  rtConsts.myMaterialDataBufferIndex = myRtScene.myMaterialData->GetGlobalDescriptorIndex();
-  rtConsts.mySampleBufferIndex = myRtScene.myHaltonSamples->GetGlobalDescriptorIndex();
+  rtConsts.myInstanceDataBufferIndex = myRtScene->myInstanceData->GetGlobalDescriptorIndex();
+  rtConsts.myMaterialDataBufferIndex = myRtScene->myMaterialData->GetGlobalDescriptorIndex();
+  rtConsts.mySampleBufferIndex = myRtScene->myHaltonSamples->GetGlobalDescriptorIndex();
   rtConsts.myLightInstanceId = myLightInstanceIdx;
-  rtConsts.myNumHaltonSamples = myRtScene.myHaltonSamples->GetBuffer()->GetProperties().myNumElements;
+  rtConsts.myNumHaltonSamples = myRtScene->myHaltonSamples->GetBuffer()->GetProperties().myNumElements;
   rtConsts.myLightEmission = myLightEnabled ? myLightColor * myLightStrength : glm::float3(0.0f);
   rtConsts.mySampleSky = mySampleSky ? 1u : 0u;
   rtConsts.mySkyFallbackEmission = glm::float3(mySkyFallbackIntensity);
@@ -669,10 +736,10 @@ void PathTracer::RenderRT(CommandList* ctx)
   ctx->BindConstantBuffer(&rtConsts, sizeof(rtConsts), 0);
 
   ctx->PrepareResourceShaderAccess(myHdrLightTexWrite.get());
-  ctx->PrepareResourceShaderAccess(myRtScene.myTLAS->GetBufferRead());
-  ctx->PrepareResourceShaderAccess(myRtScene.myInstanceData.get());
-  ctx->PrepareResourceShaderAccess(myRtScene.myMaterialData.get());
-  ctx->PrepareResourceShaderAccess(myRtScene.myHaltonSamples.get());
+  ctx->PrepareResourceShaderAccess(myRtScene->myTLAS->GetBufferRead());
+  ctx->PrepareResourceShaderAccess(myRtScene->myInstanceData.get());
+  ctx->PrepareResourceShaderAccess(myRtScene->myMaterialData.get());
+  ctx->PrepareResourceShaderAccess(myRtScene->myHaltonSamples.get());
 
   DispatchRaysDesc desc;
   desc.myRayGenShaderTableRange = rtSbt->GetRayGenRange();
