@@ -1,6 +1,7 @@
 using Sharpmake;
 
 [module: Sharpmake.Include("Fancy/sharpmake_scripts/common.sharpmake.cs")]
+[module: Sharpmake.Include("Fancy/sharpmake_scripts/vcpkgProjects.sharpmake.cs")]
 [module: Sharpmake.Include("Fancy/sharpmake_scripts/FancyExternalApplication.sharpmake.cs")]
 [module: Sharpmake.Include("Fancy/sharpmake_scripts/FancyApplication.sharpmake.cs")]
 [module: Sharpmake.Include("Fancy/sharpmake_scripts/FancyInternalApplication.sharpmake.cs")]
@@ -18,10 +19,7 @@ namespace Fancy
     {
       Name = "PathTracer";
 
-      AddTargets(new Target(
-                 Platform.win64,
-                 DevEnv.vs2022,
-                 Optimization.Debug | Optimization.Release));
+      AddTargets(FancyTargets.ApplicationTargets);
     }
 
     [Sharpmake.Configure]
