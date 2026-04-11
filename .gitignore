@@ -33,6 +33,7 @@
 .vs/*
 bin/*
 _build_temp/*
+_cmake_build/
 *.vcxproj
 *.filters
 *.user

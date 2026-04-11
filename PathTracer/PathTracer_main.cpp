@@ -1,4 +1,5 @@
 #include "Windows.h"
+#include <shellapi.h>
 
 #include <array>
 #include <EASTL/vector.h>

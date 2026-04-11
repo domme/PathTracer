@@ -1,2 +1,3 @@
-.\Fancy\external\sharpmake\Sharpmake.Application.exe /sources(@'PathTracer_sln.sharpmake.cs')
+@echo off
+cmake --preset vs2022-win64
 pause
