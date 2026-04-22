@@ -1,0 +1,53 @@
+# PathTracer — clang-format configuration
+# Matches the project code style guide (.copilot/copilot-instructions.md)
+#
+# Visual Studio 2022: Tools → Options → Text Editor → C/C++ → Formatting
+#   Enable "Use custom clang-format.exe" is NOT required; VS reads this file
+#   automatically when "Use clang-format for formatting" is on.
+#   Short path: Tools → Options → Text Editor → C/C++ → Code Style → Formatting
+#   Set "Enable ClangFormat support" = true.
+
+BasedOnStyle: LLVM
+
+# ----- Indentation -----
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+NamespaceIndentation: All
+IndentCaseLabels: true
+
+# ----- Braces -----
+BreakBeforeBraces: Attach          # same-line {
+
+# ----- Spacing inside brackets -----
+SpacesInAngles: Always             # < T >
+SpacesInParens: Custom             # configure per-context below
+SpacesInParensOptions:
+  ExceptDoubleParentheses: true    # leave [[...]] alone
+  InCStyleCasts: true              # ( Type * ) value
+  InConditionalStatements: true    # if ( x )
+  InEmptyParentheses: false        # keep () empty
+  Other: true                      # all other parens
+SpacesInSquareBrackets: true       # [ i ]
+
+# ----- Pointer / reference alignment -----
+PointerAlignment: Middle           # Type * name
+ReferenceAlignment: Middle         # Type & name
+DerivePointerAlignment: false
+
+# ----- Column limit -----
+ColumnLimit: 120
+
+# ----- Short constructs — keep on same line -----
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# ----- Includes -----
+SortIncludes: Never
+
+# ----- Misc -----
+Cpp11BracedListStyle: false
+SpaceBeforeAssignmentOperators: true
+SpaceAfterCStyleCast: true
+SpacesBeforeTrailingComments: 2

@@ -9,8 +9,7 @@
 
 class Sky;
 
-namespace Fancy
-{
+namespace Fancy {
   class DepthStencilState;
   class GpuBufferView;
   struct SceneData;
@@ -26,55 +25,49 @@ namespace Fancy
   class TextureView;
   class Texture;
   class CommandList;
-}
+}  // namespace Fancy
 
 using namespace Fancy;
 
-struct BlasData
-{
-  SharedPtr<RtAccelerationStructure> myBLAS;
-  SharedPtr<GpuBufferView> myTriangleIndices;
-  SharedPtr<GpuBufferView> myVertexData;
+struct BlasData {
+  SharedPtr< RtAccelerationStructure > myBLAS;
+  SharedPtr< GpuBufferView > myTriangleIndices;
+  SharedPtr< GpuBufferView > myVertexData;
 };
 
-struct RaytracingScene
-{
-  SharedPtr<GpuBufferView> myInstanceData;
-  SharedPtr<GpuBufferView> myMaterialData;
-  SharedPtr<GpuBufferView> myHaltonSamples;
-  SharedPtr<RtPipelineState> myRtPso;
-  SharedPtr<RtShaderBindingTable> mySBT;
-  SharedPtr<RtPipelineState> myAoRtPso;
-  SharedPtr<RtShaderBindingTable> myAoSBT;
+struct RaytracingScene {
+  SharedPtr< GpuBufferView > myInstanceData;
+  SharedPtr< GpuBufferView > myMaterialData;
+  SharedPtr< GpuBufferView > myHaltonSamples;
+  SharedPtr< RtPipelineState > myRtPso;
+  SharedPtr< RtShaderBindingTable > mySBT;
+  SharedPtr< RtPipelineState > myAoRtPso;
+  SharedPtr< RtShaderBindingTable > myAoSBT;
 
-  SharedPtr<RtAccelerationStructure> myTLAS;
-  eastl::vector<BlasData> myBlasDatas;
+  SharedPtr< RtAccelerationStructure > myTLAS;
+  eastl::vector< BlasData > myBlasDatas;
 };
 
-class PathTracer : public Fancy::Application
-{
+class PathTracer : public Fancy::Application {
 public:
-  PathTracer(HINSTANCE anInstanceHandle,
-    const char** someArguments,
-    uint aNumArguments,
-    const char* aName,
-    const Fancy::RenderPlatformProperties& someRenderProperties,
-    const Fancy::WindowParameters& someWindowParams);
+  PathTracer( HINSTANCE anInstanceHandle, const char ** someArguments, uint aNumArguments, const char * aName,
+              const Fancy::RenderPlatformProperties & someRenderProperties,
+              const Fancy::WindowParameters & someWindowParams );
 
-  void LoadScene(const char* aPath, const glm::float3& aCamPos);
+  void LoadScene( const char * aPath, const glm::float3 & aCamPos );
   void InitSky();
-  void InitRtScene(const SceneData& aScene);
+  void InitRtScene( const SceneData & aScene );
   void InitSampleSequences();
 
   ~PathTracer() override;
-  void OnWindowResized(uint aWidth, uint aHeight) override;
+  void OnWindowResized( uint aWidth, uint aHeight ) override;
   void BeginFrame() override;
   void Update() override;
   void Render() override;
   void EndFrame() override;
 
 private:
-  void OnRtPipelineRecompiled(const RtPipelineState* aRtPipeline);
+  void OnRtPipelineRecompiled( const RtPipelineState * aRtPipeline );
   void UpdateOutputTexture();
   void UpdateDepthbuffer();
   void RestartAccumulation();
@@ -83,34 +76,34 @@ private:
   void UpdateMainMenuBar();
   void UpdatePathTracingSettings();
 
-  void RenderRaster(CommandList* ctx);
-  void RenderRT(CommandList* ctx);
-  void TonemapComposit(CommandList* ctx);
+  void RenderRaster( CommandList * ctx );
+  void RenderRT( CommandList * ctx );
+  void TonemapComposit( CommandList * ctx );
 
-  SharedPtr<Sky> mySky;
+  SharedPtr< Sky > mySky;
   Sky_Imgui mySky_Imgui;
 
-  SharedPtr<Scene> myScene;
-  SharedPtr<ShaderPipeline> myUnlitMeshShader;
-  SharedPtr<ShaderPipeline> myTonemapCompositShader;
-  SharedPtr<ShaderPipeline> myClearTextureShader;
+  SharedPtr< Scene > myScene;
+  SharedPtr< ShaderPipeline > myUnlitMeshShader;
+  SharedPtr< ShaderPipeline > myTonemapCompositShader;
+  SharedPtr< ShaderPipeline > myClearTextureShader;
 
-  UniquePtr<RaytracingScene> myRtScene;
+  UniquePtr< RaytracingScene > myRtScene;
 
-  SharedPtr<TextureView> myHdrLightTexRtv;
-  SharedPtr<TextureView> myHdrLightTexWrite;
-  SharedPtr<TextureView> myHdrLightTexRead;
-  SharedPtr<TextureView> myDepthStencilDsv;
-  SharedPtr<DepthStencilState> myDepthTestOff;
+  SharedPtr< TextureView > myHdrLightTexRtv;
+  SharedPtr< TextureView > myHdrLightTexWrite;
+  SharedPtr< TextureView > myHdrLightTexRead;
+  SharedPtr< TextureView > myDepthStencilDsv;
+  SharedPtr< DepthStencilState > myDepthTestOff;
 
-  SharedPtr<TextureView> myDdsTestSrv;
+  SharedPtr< TextureView > myDdsTestSrv;
 
   float myAoDistance = 1.0f;
   uint myNumAccumulationFrames = 0u;
   bool myAccumulationNeedsClear = true;
   glm::float4x4 myLastViewMat;
-  
-  ImGuiContext* myImGuiContext = nullptr;
+
+  ImGuiContext * myImGuiContext = nullptr;
   bool myRenderRaster = false;
   bool myRenderAo = false;
   bool myAccumulate = true;
@@ -122,11 +115,10 @@ private:
   float64 myLastTimeMs = 0.0;
   bool mySupportsRaytracing = false;
   bool myLightEnabled = true;
-  glm::float3 myLightColor = glm::float3(1.0f);
+  glm::float3 myLightColor = glm::float3( 1.0f );
   float myLightStrength = 100.0f;
   float myPhongSpecularPower = 10.0f;
 
-  UniquePtr<ImGuiMippedDebugImage> myDdsDebugImage;
+  UniquePtr< ImGuiMippedDebugImage > myDdsDebugImage;
   DebugTextureList myTextureList;
 };
-
