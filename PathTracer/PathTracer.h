@@ -4,7 +4,7 @@
 
 #include "Sky_Imgui.h"
 #include "Common/Application.h"
-#include "Common/Ptr.h"
+#include "Rendering/ResourceHandle.h"
 #include "DebugTextureList.h"
 
 class Sky;
@@ -30,21 +30,28 @@ namespace Fancy {
 using namespace Fancy;
 
 struct BlasData {
-  SharedPtr< RtAccelerationStructure > myBLAS;
-  SharedPtr< GpuBufferView > myTriangleIndices;
-  SharedPtr< GpuBufferView > myVertexData;
+  RtAccelerationStructureHandle myBLAS;
+  GpuBufferHandle myTriangleIndicesBuf;
+  GpuBufferViewHandle myTriangleIndices;
+  GpuBufferHandle myVertexDataBuf;
+  GpuBufferViewHandle myVertexData;
 };
 
 struct RaytracingScene {
-  SharedPtr< GpuBufferView > myInstanceData;
-  SharedPtr< GpuBufferView > myMaterialData;
-  SharedPtr< GpuBufferView > myHaltonSamples;
-  SharedPtr< RtPipelineState > myRtPso;
-  SharedPtr< RtShaderBindingTable > mySBT;
-  SharedPtr< RtPipelineState > myAoRtPso;
-  SharedPtr< RtShaderBindingTable > myAoSBT;
+  ~RaytracingScene();
 
-  SharedPtr< RtAccelerationStructure > myTLAS;
+  GpuBufferHandle myInstanceDataBuf;
+  GpuBufferViewHandle myInstanceData;
+  GpuBufferHandle myMaterialDataBuf;
+  GpuBufferViewHandle myMaterialData;
+  GpuBufferHandle myHaltonSamplesBuf;
+  GpuBufferViewHandle myHaltonSamples;
+  RtPipelineStateHandle myRtPso;
+  RtShaderBindingTableHandle mySBT;
+  RtPipelineStateHandle myAoRtPso;
+  RtShaderBindingTableHandle myAoSBT;
+
+  RtAccelerationStructureHandle myTLAS;
   eastl::vector< BlasData > myBlasDatas;
 };
 
@@ -80,23 +87,27 @@ private:
   void RenderRT( CommandList * ctx );
   void TonemapComposit( CommandList * ctx );
 
-  SharedPtr< Sky > mySky;
+  UniquePtr< Sky > mySky;
   Sky_Imgui mySky_Imgui;
 
   SharedPtr< Scene > myScene;
-  SharedPtr< ShaderPipeline > myUnlitMeshShader;
-  SharedPtr< ShaderPipeline > myTonemapCompositShader;
-  SharedPtr< ShaderPipeline > myClearTextureShader;
+  ShaderPipelineHandle myUnlitMeshShader;
+  ShaderPipelineHandle myTonemapCompositShader;
+  ShaderPipelineHandle myClearTextureShader;
 
   UniquePtr< RaytracingScene > myRtScene;
 
-  SharedPtr< TextureView > myHdrLightTexRtv;
-  SharedPtr< TextureView > myHdrLightTexWrite;
-  SharedPtr< TextureView > myHdrLightTexRead;
-  SharedPtr< TextureView > myDepthStencilDsv;
-  SharedPtr< DepthStencilState > myDepthTestOff;
+  TextureHandle myHdrLightTex;
+  TextureViewHandle myHdrLightTexRtv;
+  TextureViewHandle myHdrLightTexWrite;
+  TextureViewHandle myHdrLightTexRead;
 
-  SharedPtr< TextureView > myDdsTestSrv;
+  TextureHandle myDepthStencilTex;
+  TextureViewHandle myDepthStencilDsv;
+
+  DepthStencilStateHandle myDepthTestOff;
+
+  TextureViewHandle myDdsTestSrv;
 
   float myAoDistance = 1.0f;
   uint myNumAccumulationFrames = 0u;

@@ -1,5 +1,6 @@
 #include "PathTracer.h"
 
+#include <chrono>
 #include "imgui.h"
 #include "imgui_impl_fancy.h"
 #include "Sky.h"
@@ -41,6 +42,40 @@ SceneLoadInfo sceneLoadInfos[] = {
     glm::float3( -13.0f, 513.7f, -1191.5f ) },
 };
 
+RaytracingScene::~RaytracingScene() {
+  for ( BlasData & blas : myBlasDatas ) {
+    if ( blas.myVertexData.IsValid() )
+      RenderCore::DeleteBufferView( blas.myVertexData );
+    if ( blas.myVertexDataBuf.IsValid() )
+      RenderCore::DeleteBuffer( blas.myVertexDataBuf );
+    if ( blas.myTriangleIndices.IsValid() )
+      RenderCore::DeleteBufferView( blas.myTriangleIndices );
+    if ( blas.myTriangleIndicesBuf.IsValid() )
+      RenderCore::DeleteBuffer( blas.myTriangleIndicesBuf );
+    if ( blas.myBLAS.IsValid() )
+      RenderCore::DeleteRtAccelerationStructure( blas.myBLAS );
+  }
+  if ( myInstanceData.IsValid() )
+    RenderCore::DeleteBufferView( myInstanceData );
+  if ( myInstanceDataBuf.IsValid() )
+    RenderCore::DeleteBuffer( myInstanceDataBuf );
+  if ( myMaterialData.IsValid() )
+    RenderCore::DeleteBufferView( myMaterialData );
+  if ( myMaterialDataBuf.IsValid() )
+    RenderCore::DeleteBuffer( myMaterialDataBuf );
+  if ( myHaltonSamples.IsValid() )
+    RenderCore::DeleteBufferView( myHaltonSamples );
+  if ( myHaltonSamplesBuf.IsValid() )
+    RenderCore::DeleteBuffer( myHaltonSamplesBuf );
+  // RtPipelineState is a cached resource; not owned
+  if ( mySBT.IsValid() )
+    RenderCore::DeleteRtShaderBindingTable( mySBT );
+  if ( myAoSBT.IsValid() )
+    RenderCore::DeleteRtShaderBindingTable( myAoSBT );
+  if ( myTLAS.IsValid() )
+    RenderCore::DeleteRtAccelerationStructure( myTLAS );
+}
+
 PathTracer::PathTracer( HINSTANCE anInstanceHandle, const char ** someArguments, uint aNumArguments, const char * aName,
                         const Fancy::RenderPlatformProperties & someRenderProperties,
                         const Fancy::WindowParameters & someWindowParams )
@@ -64,13 +99,13 @@ PathTracer::PathTracer( HINSTANCE anInstanceHandle, const char ** someArguments,
   UpdateOutputTexture();
 
   myUnlitMeshShader = RenderCore::CreateVertexPixelShaderPipeline( "resources/shaders/unlit_mesh.hlsl" );
-  ASSERT( myUnlitMeshShader );
+  ASSERT( myUnlitMeshShader.IsValid() );
 
   myTonemapCompositShader = RenderCore::CreateVertexPixelShaderPipeline( "resources/shaders/tonemap_composit.hlsl" );
-  ASSERT( myTonemapCompositShader );
+  ASSERT( myTonemapCompositShader.IsValid() );
 
   myClearTextureShader = RenderCore::CreateComputeShaderPipeline( "resources/shaders/clear_texture.hlsl" );
-  ASSERT( myClearTextureShader );
+  ASSERT( myClearTextureShader.IsValid() );
 
   InitSky();
 
@@ -105,8 +140,8 @@ void PathTracer::LoadScene( const char * aPath, const glm::float3 & aCamPos ) {
   myCamera.myFovDeg = 60.0f;
   myCamera.myNear = 1.0f;
   myCamera.myFar = 10000.0f;
-  myCamera.myWidth = (float) myRenderOutput->GetWindow()->GetWidth();
-  myCamera.myHeight = (float) myRenderOutput->GetWindow()->GetHeight();
+  myCamera.myWidth = ( float ) RenderCore::GetRenderOutput( myRenderOutput )->GetWindow()->GetWidth();
+  myCamera.myHeight = ( float ) RenderCore::GetRenderOutput( myRenderOutput )->GetWindow()->GetHeight();
   myCamera.myIsOrtho = false;
 
   myCamera.UpdateView();
@@ -136,7 +171,9 @@ glm::uvec2 GetOffsetSize( const VertexInputLayoutProperties & someVertexProps, V
 void PathTracer::InitRtScene( const SceneData & aScene ) {
   myRtScene.reset( new RaytracingScene() );
 
-  for ( uint iMesh = 0u; iMesh < (uint) aScene.myMeshes.size(); ++iMesh ) {
+  myRtScene->myBlasDatas.reserve( aScene.myMeshes.size() );
+
+  for ( uint iMesh = 0u; iMesh < ( uint ) aScene.myMeshes.size(); ++iMesh ) {
     const MeshData & mesh = aScene.myMeshes[ iMesh ];
 
     eastl::fixed_vector< RtAccelerationStructureGeometryData, 4 > meshPartsGeometryDatas;
@@ -156,7 +193,7 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
 
       RtAccelerationStructureGeometryData & geometryData = meshPartsGeometryDatas.push_back();
       geometryData.myType = RtAccelerationStructureGeometryType::TRIANGLES;
-      geometryData.myFlags = (uint) RtAccelerationStructureGeometryFlags::OPAQUE_GEOMETRY;
+      geometryData.myFlags = ( uint ) RtAccelerationStructureGeometryFlags::OPAQUE_GEOMETRY;
       geometryData.myVertexFormat = vertexProps.myAttributes[ 0 ].myFormat;
       geometryData.myNumVertices = numVertices;
       geometryData.myVertexData.myType = RT_BUFFER_DATA_TYPE_CPU_DATA;
@@ -213,25 +250,27 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
     BlasData & blasData = myRtScene->myBlasDatas.push_back();
 
     GpuBufferProperties bufferProps;
-    bufferProps.myBindFlags = (uint) GpuBufferBindFlags::SHADER_BUFFER;
+    bufferProps.myBindFlags = ( uint ) GpuBufferBindFlags::SHADER_BUFFER;
     bufferProps.myNumElements = numMeshVertices;
     bufferProps.myElementSizeBytes = sizeof( VertexData );
     GpuBufferViewProperties bufferViewProps;
     bufferViewProps.myIsRaw = true;
     StaticString< 64 > name( "Rt mesh vertexData %d", iMesh );
-    blasData.myVertexData =
-        RenderCore::CreateBufferView( bufferProps, bufferViewProps, name.GetBuffer(), vertexData.data() );
+    blasData.myVertexDataBuf = RenderCore::CreateBuffer( bufferProps, name.GetBuffer(), vertexData.data() );
+    blasData.myVertexData = RenderCore::CreateBufferView( RenderCore::GetBuffer( blasData.myVertexDataBuf ),
+                                                          bufferViewProps, name.GetBuffer() );
 
     bufferProps.myNumElements = numMeshTriangles;
     bufferProps.myElementSizeBytes = sizeof( glm::uvec3 );
     name.Format( "Rt mesh triangles %d", iMesh );
-    blasData.myTriangleIndices =
-        RenderCore::CreateBufferView( bufferProps, bufferViewProps, name.GetBuffer(), triangleIndices.data() );
+    blasData.myTriangleIndicesBuf = RenderCore::CreateBuffer( bufferProps, name.GetBuffer(), triangleIndices.data() );
+    blasData.myTriangleIndices = RenderCore::CreateBufferView( RenderCore::GetBuffer( blasData.myTriangleIndicesBuf ),
+                                                               bufferViewProps, name.GetBuffer() );
 
     name.Format( "BLAS mesh %d", iMesh );
     blasData.myBLAS = RenderCore::CreateRtBottomLevelAccelerationStructure(
         meshPartsGeometryDatas.data(), meshPartsGeometryDatas.size(), 0u, name.GetBuffer() );
-    ASSERT( blasData.myBLAS != nullptr );
+    ASSERT( blasData.myBLAS.IsValid() );
   }
 
   struct PerInstanceData {
@@ -240,36 +279,41 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
     uint myMaterialIndex;
   };
   eastl::vector< PerInstanceData > perInstanceDatas;
-  perInstanceDatas.reserve( (uint) aScene.myInstances.size() );
+  perInstanceDatas.reserve( ( uint ) aScene.myInstances.size() );
 
   eastl::fixed_vector< RtAccelerationStructureInstanceData, 16 > instanceDatas;
-  for ( uint iInstance = 0u; iInstance < (uint) aScene.myInstances.size(); ++iInstance ) {
+  for ( uint iInstance = 0u; iInstance < ( uint ) aScene.myInstances.size(); ++iInstance ) {
     const SceneMeshInstance & instance = aScene.myInstances[ iInstance ];
 
     PerInstanceData & perInstanceData = perInstanceDatas.push_back();
     perInstanceData.myMaterialIndex = instance.myMaterialIndex;
     perInstanceData.myIndexBufferDescriptorIndex =
-        myRtScene->myBlasDatas[ instance.myMeshIndex ].myTriangleIndices->GetGlobalDescriptorIndex();
+        RenderCore::GetBufferView( myRtScene->myBlasDatas[ instance.myMeshIndex ].myTriangleIndices )
+            ->GetGlobalDescriptorIndex();
     perInstanceData.myVertexBufferDescriptorIndex =
-        myRtScene->myBlasDatas[ instance.myMeshIndex ].myVertexData->GetGlobalDescriptorIndex();
+        RenderCore::GetBufferView( myRtScene->myBlasDatas[ instance.myMeshIndex ].myVertexData )
+            ->GetGlobalDescriptorIndex();
 
     RtAccelerationStructureInstanceData & instanceData = instanceDatas.push_back();
     instanceData.myInstanceId = iInstance;
     instanceData.mySbtHitGroupOffset = 0;
-    instanceData.myInstanceBLAS = myRtScene->myBlasDatas[ instance.myMeshIndex ].myBLAS;
+    instanceData.myInstanceBLAS =
+        RenderCore::GetRtAccelerationStructure( myRtScene->myBlasDatas[ instance.myMeshIndex ].myBLAS );
     instanceData.myInstanceMask = UINT8_MAX;
     instanceData.myTransform = instance.myTransform;
     instanceData.myFlags = RT_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE | RT_INSTANCE_FLAG_FORCE_OPAQUE;
   }
 
   GpuBufferProperties bufferProps;
-  bufferProps.myBindFlags = (uint) GpuBufferBindFlags::SHADER_BUFFER;
-  bufferProps.myNumElements = (uint) perInstanceDatas.size();
+  bufferProps.myBindFlags = ( uint ) GpuBufferBindFlags::SHADER_BUFFER;
+  bufferProps.myNumElements = ( uint ) perInstanceDatas.size();
   bufferProps.myElementSizeBytes = sizeof( PerInstanceData );
   GpuBufferViewProperties bufferViewProps;
   bufferViewProps.myIsRaw = true;
-  myRtScene->myInstanceData =
-      RenderCore::CreateBufferView( bufferProps, bufferViewProps, "Rt per instance data", perInstanceDatas.data() );
+  myRtScene->myInstanceDataBuf =
+      RenderCore::CreateBuffer( bufferProps, "Rt per instance data", perInstanceDatas.data() );
+  myRtScene->myInstanceData = RenderCore::CreateBufferView( RenderCore::GetBuffer( myRtScene->myInstanceDataBuf ),
+                                                            bufferViewProps, "Rt per instance data" );
 
   struct MaterialData {
     glm::float3 myEmission;
@@ -280,18 +324,19 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
 
   for ( const MaterialDesc & mat : aScene.myMaterials ) {
     MaterialData & matData = materialDatas.push_back();
-    matData.myEmission = mat.myParameters[ (uint) MaterialParameterType::EMISSION ];
-    matData.myColor = MathUtil::Encode_Unorm_RGBA( mat.myParameters[ (uint) MaterialParameterType::COLOR ] );
+    matData.myEmission = mat.myParameters[ ( uint ) MaterialParameterType::EMISSION ];
+    matData.myColor = MathUtil::Encode_Unorm_RGBA( mat.myParameters[ ( uint ) MaterialParameterType::COLOR ] );
   }
 
   bufferProps.myElementSizeBytes = sizeof( MaterialData );
   bufferProps.myNumElements = materialDatas.size();
   bufferViewProps.myIsRaw = true;
-  myRtScene->myMaterialData =
-      RenderCore::CreateBufferView( bufferProps, bufferViewProps, "Rt material buffer", materialDatas.data() );
+  myRtScene->myMaterialDataBuf = RenderCore::CreateBuffer( bufferProps, "Rt material buffer", materialDatas.data() );
+  myRtScene->myMaterialData = RenderCore::CreateBufferView( RenderCore::GetBuffer( myRtScene->myMaterialDataBuf ),
+                                                            bufferViewProps, "Rt material buffer" );
 
-  myRtScene->myTLAS =
-      RenderCore::CreateRtTopLevelAccelerationStructure( instanceDatas.data(), (uint) instanceDatas.size(), 0, "TLAS" );
+  myRtScene->myTLAS = RenderCore::CreateRtTopLevelAccelerationStructure( instanceDatas.data(),
+                                                                         ( uint ) instanceDatas.size(), 0, "TLAS" );
 
   // Ao RT pipeline + SBT
   {
@@ -313,9 +358,14 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
     sbtProps.myNumMissShaderRecords = 5;
     sbtProps.myNumHitShaderRecords = 5;
     myRtScene->myAoSBT = RenderCore::CreateRtShaderTable( sbtProps );
-    myRtScene->myAoSBT->AddShaderRecord( myRtScene->myAoRtPso->GetRayGenShaderIdentifier( raygenIdx ) );
-    myRtScene->myAoSBT->AddShaderRecord( myRtScene->myAoRtPso->GetHitShaderIdentifier( hitIdxPrimary ) );
-    myRtScene->myAoSBT->AddShaderRecord( myRtScene->myAoRtPso->GetHitShaderIdentifier( hitIdxAo ) );
+    RenderCore::GetRtShaderBindingTable( myRtScene->myAoSBT )
+        ->AddShaderRecord(
+            RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )->GetRayGenShaderIdentifier( raygenIdx ) );
+    RenderCore::GetRtShaderBindingTable( myRtScene->myAoSBT )
+        ->AddShaderRecord(
+            RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )->GetHitShaderIdentifier( hitIdxPrimary ) );
+    RenderCore::GetRtShaderBindingTable( myRtScene->myAoSBT )
+        ->AddShaderRecord( RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )->GetHitShaderIdentifier( hitIdxAo ) );
   }
 
   // PathTracing RT pipeline + SBT
@@ -335,8 +385,11 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
     sbtProps.myNumMissShaderRecords = 5;
     sbtProps.myNumHitShaderRecords = 5;
     myRtScene->mySBT = RenderCore::CreateRtShaderTable( sbtProps );
-    myRtScene->mySBT->AddShaderRecord( myRtScene->myRtPso->GetRayGenShaderIdentifier( raygenIdx ) );
-    myRtScene->mySBT->AddShaderRecord( myRtScene->myRtPso->GetHitShaderIdentifier( hitIdx ) );
+    RenderCore::GetRtShaderBindingTable( myRtScene->mySBT )
+        ->AddShaderRecord(
+            RenderCore::GetRtPipelineState( myRtScene->myRtPso )->GetRayGenShaderIdentifier( raygenIdx ) );
+    RenderCore::GetRtShaderBindingTable( myRtScene->mySBT )
+        ->AddShaderRecord( RenderCore::GetRtPipelineState( myRtScene->myRtPso )->GetHitShaderIdentifier( hitIdx ) );
   }
 
   InitSampleSequences();
@@ -351,12 +404,14 @@ void PathTracer::InitSampleSequences() {
     someSamples.push_back( { MathUtil::Halton( i, 2 ), MathUtil::Halton( i, 3 ) } );
 
   GpuBufferProperties props;
-  props.myBindFlags = (uint) GpuBufferBindFlags::SHADER_BUFFER;
+  props.myBindFlags = ( uint ) GpuBufferBindFlags::SHADER_BUFFER;
   props.myElementSizeBytes = sizeof( glm::float2 );
   props.myNumElements = sampleCount;
   GpuBufferViewProperties viewProps;
   viewProps.myIsRaw = true;
-  myRtScene->myHaltonSamples = RenderCore::CreateBufferView( props, viewProps, "Halton samples", someSamples.data() );
+  myRtScene->myHaltonSamplesBuf = RenderCore::CreateBuffer( props, "Halton samples", someSamples.data() );
+  myRtScene->myHaltonSamples = RenderCore::CreateBufferView( RenderCore::GetBuffer( myRtScene->myHaltonSamplesBuf ),
+                                                             viewProps, "Halton samples" );
 }
 
 PathTracer::~PathTracer() {
@@ -364,6 +419,21 @@ PathTracer::~PathTracer() {
   ImGuiRendering::Shutdown();
   ImGui::DestroyContext( myImGuiContext );
   myImGuiContext = nullptr;
+
+  if ( myHdrLightTexRead.IsValid() )
+    RenderCore::DeleteTextureView( myHdrLightTexRead );
+  if ( myHdrLightTexWrite.IsValid() )
+    RenderCore::DeleteTextureView( myHdrLightTexWrite );
+  if ( myHdrLightTexRtv.IsValid() )
+    RenderCore::DeleteTextureView( myHdrLightTexRtv );
+  if ( myHdrLightTex.IsValid() )
+    RenderCore::DeleteTexture( myHdrLightTex );
+  if ( myDepthStencilDsv.IsValid() )
+    RenderCore::DeleteTextureView( myDepthStencilDsv );
+  if ( myDepthStencilTex.IsValid() )
+    RenderCore::DeleteTexture( myDepthStencilTex );
+  if ( myDdsTestSrv.IsValid() )
+    RenderCore::DeleteTextureView( myDdsTestSrv );
 }
 
 void PathTracer::OnWindowResized( uint aWidth, uint aHeight ) {
@@ -420,7 +490,7 @@ void PathTracer::UpdatePathTracingSettings() {
   float64 msNow = SampleTimeMs();
   float64 frameTime = msNow - myLastTimeMs;
   myLastTimeMs = msNow;
-  ImGui::Text( "Frame Time: %.3f ms", (float) frameTime );
+  ImGui::Text( "Frame Time: %.3f ms", ( float ) frameTime );
 
   if ( ImGui::Checkbox( "Render Half Res", &myHalfResRender ) ) {
     UpdateOutputTexture();
@@ -529,18 +599,21 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
 
   mySky->ComputeSkyViewLut( ctx, myCamera );
 
-  uint dstTexWidth = myHdrLightTexRead->GetTexture()->GetProperties().myWidth;
-  uint dstTexHeight = myHdrLightTexRead->GetTexture()->GetProperties().myHeight;
+  TextureView * hdrLightTexRead = RenderCore::GetTextureView( myHdrLightTexRead );
+  uint dstTexWidth = hdrLightTexRead->GetTexture()->GetProperties().myWidth;
+  uint dstTexHeight = hdrLightTexRead->GetTexture()->GetProperties().myHeight;
 
   ctx->SetViewport( glm::uvec4( 0, 0, dstTexWidth, dstTexHeight ) );
   ctx->SetClipRect( glm::uvec4( 0, 0, dstTexWidth, dstTexHeight ) );
-  ctx->ClearDepthStencilTarget( myDepthStencilDsv.get(), 1.0f, 0u, (uint) DepthStencilClearFlags::CLEAR_ALL );
+  ctx->ClearDepthStencilTarget( RenderCore::GetTextureView( myDepthStencilDsv ), 1.0f, 0u,
+                                ( uint ) DepthStencilClearFlags::CLEAR_ALL );
   glm::float4 clearColor( 0.0f );
-  ctx->ClearRenderTarget( myHdrLightTexRtv.get(), &clearColor[ 0 ] );
+  ctx->ClearRenderTarget( RenderCore::GetTextureView( myHdrLightTexRtv ), &clearColor[ 0 ] );
 
-  mySky->Render( ctx, myHdrLightTexWrite.get(), nullptr, myCamera );
+  mySky->Render( ctx, RenderCore::GetTextureView( myHdrLightTexWrite ), nullptr, myCamera );
 
-  ctx->SetRenderTarget( myHdrLightTexRtv.get(), myDepthStencilDsv.get() );
+  ctx->SetRenderTarget( RenderCore::GetTextureView( myHdrLightTexRtv ),
+                        RenderCore::GetTextureView( myDepthStencilDsv ) );
 
   ctx->SetDepthStencilState( nullptr );
   ctx->SetBlendState( nullptr );
@@ -549,20 +622,20 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
   ctx->SetWindingOrder( WindingOrder::CCW );
 
   ctx->SetTopologyType( TopologyType::TRIANGLE_LIST );
-  ctx->SetShaderPipeline( myUnlitMeshShader.get() );
+  ctx->SetShaderPipeline( RenderCore::GetShaderPipeline( myUnlitMeshShader ) );
 
   auto RenderMesh = [ ctx ]( Mesh * mesh ) {
     for ( SharedPtr< MeshPart > & meshPart : mesh->myParts ) {
-      const VertexInputLayout * layout = meshPart->myVertexInputLayout.get();
+      const VertexInputLayout * layout = RenderCore::GetVertexInputLayout( meshPart->myVertexInputLayout );
 
-      const GpuBuffer * vertexBuffer = meshPart->myVertexBuffer.get();
+      const GpuBuffer * vertexBuffer = RenderCore::GetBuffer( meshPart->myVertexBuffer );
       uint64 offset = 0ull;
       uint64 size = vertexBuffer->GetByteSize();
       ctx->BindVertexBuffers( &vertexBuffer, &offset, &size, 1u, layout );
-      ctx->BindIndexBuffer( meshPart->myIndexBuffer.get(),
-                            meshPart->myIndexBuffer->GetProperties().myElementSizeBytes );
+      const GpuBuffer * indexBuffer = RenderCore::GetBuffer( meshPart->myIndexBuffer );
+      ctx->BindIndexBuffer( indexBuffer, indexBuffer->GetProperties().myElementSizeBytes );
 
-      ctx->DrawIndexedInstanced( meshPart->myIndexBuffer->GetProperties().myNumElements, 1u, 0, 0, 0 );
+      ctx->DrawIndexedInstanced( indexBuffer->GetProperties().myNumElements, 1u, 0, 0, 0 );
     }
   };
 
@@ -576,7 +649,7 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
       glm::float4 myColor;
     };
     Cbuffer_PerObject cbuffer_perObject{ myCamera.myViewProj * transform,
-                                         material->myParameters[ (uint) MaterialParameterType::COLOR ] };
+                                         material->myParameters[ ( uint ) MaterialParameterType::COLOR ] };
     ctx->BindConstantBuffer( &cbuffer_perObject, sizeof( cbuffer_perObject ), 0 );
 
     RenderMesh( mesh );
@@ -586,23 +659,28 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
 void PathTracer::RenderRT( CommandList * ctx ) {
   GPU_SCOPED_PROFILER_FUNCTION( ctx, 0u );
 
-  uint dstTexWidth = myHdrLightTexRead->GetTexture()->GetProperties().myWidth;
-  uint dstTexHeight = myHdrLightTexRead->GetTexture()->GetProperties().myHeight;
+  TextureView * hdrLightTexRead = RenderCore::GetTextureView( myHdrLightTexRead );
+  uint dstTexWidth = hdrLightTexRead->GetTexture()->GetProperties().myWidth;
+  uint dstTexHeight = hdrLightTexRead->GetTexture()->GetProperties().myHeight;
+
+  TextureView * hdrLightTexWrite = RenderCore::GetTextureView( myHdrLightTexWrite );
 
   if ( myAccumulationNeedsClear ) {
-    ctx->PrepareResourceShaderAccess( myHdrLightTexWrite.get() );
+    ctx->PrepareResourceShaderAccess( hdrLightTexWrite );
 
-    uint texIdx = myHdrLightTexWrite->GetGlobalDescriptorIndex();
+    uint texIdx = hdrLightTexWrite->GetGlobalDescriptorIndex();
     ctx->BindConstantBuffer( &texIdx, sizeof( texIdx ), 0 );
-    ctx->SetShaderPipeline( myClearTextureShader.get() );
+    ctx->SetShaderPipeline( RenderCore::GetShaderPipeline( myClearTextureShader ) );
     ctx->Dispatch( glm::ivec3( dstTexWidth, dstTexHeight, 1 ) );
-    ctx->ResourceUAVbarrier( myHdrLightTexWrite->GetTexture() );
+    ctx->ResourceUAVbarrier( hdrLightTexWrite->GetTexture() );
     myAccumulationNeedsClear = false;
     myNumAccumulationFrames = 0u;
   }
 
-  RtPipelineState * rtPso = myRenderAo ? myRtScene->myAoRtPso.get() : myRtScene->myRtPso.get();
-  RtShaderBindingTable * rtSbt = myRenderAo ? myRtScene->myAoSBT.get() : myRtScene->mySBT.get();
+  RtPipelineState * rtPso = myRenderAo ? RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )
+                                       : RenderCore::GetRtPipelineState( myRtScene->myRtPso );
+  RtShaderBindingTable * rtSbt = myRenderAo ? RenderCore::GetRtShaderBindingTable( myRtScene->myAoSBT )
+                                            : RenderCore::GetRtShaderBindingTable( myRtScene->mySBT );
   ctx->SetRaytracingPipelineState( rtPso );
 
   eastl::fixed_vector< glm::float3, 4 > nearPlaneVertices;
@@ -623,7 +701,8 @@ void PathTracer::RenderRT( CommandList * ctx ) {
 
   skyConsts.myAtmosphere = mySky->myAtmosphereParams;
   skyConsts.mySunDirection = mySky->mySunDir;
-  skyConsts.myTransmissionLutTexIdx = ctx->GetPrepareDescriptorIndex( mySky->myTransmittanceLutRead.get() );
+  skyConsts.myTransmissionLutTexIdx =
+      ctx->GetPrepareDescriptorIndex( RenderCore::GetTextureView( mySky->myTransmittanceLutRead ) );
   skyConsts.mySunIlluminance = mySky->mySunIlluminance;
   skyConsts.myRayMarchMinMaxSPP = glm::float2( 4.0f, 14.0f );
 
@@ -660,34 +739,40 @@ void PathTracer::RenderRT( CommandList * ctx ) {
 
   } rtConsts;
 
+  GpuBufferView * instanceData = RenderCore::GetBufferView( myRtScene->myInstanceData );
+  GpuBufferView * materialData = RenderCore::GetBufferView( myRtScene->myMaterialData );
+  GpuBufferView * haltonSamples = RenderCore::GetBufferView( myRtScene->myHaltonSamples );
+  RtAccelerationStructure * tlas = RenderCore::GetRtAccelerationStructure( myRtScene->myTLAS );
+
   rtConsts.myNearPlaneCorner = nearPlaneVertices[ 0 ];
   rtConsts.myAoDistance = myAoDistance;
   rtConsts.myXAxis = nearPlaneVertices[ 1 ] - nearPlaneVertices[ 0 ];
   rtConsts.myYAxis = nearPlaneVertices[ 3 ] - nearPlaneVertices[ 0 ];
-  rtConsts.myOutTexIndex = myHdrLightTexWrite->GetGlobalDescriptorIndex();
-  rtConsts.myAsIndex = myRtScene->myTLAS->GetBufferRead()->GetGlobalDescriptorIndex();
+  rtConsts.myOutTexIndex = hdrLightTexWrite->GetGlobalDescriptorIndex();
+  rtConsts.myAsIndex = tlas->GetBufferRead()->GetGlobalDescriptorIndex();
   rtConsts.myCameraPos = myCamera.myPosition;
-  rtConsts.myInstanceDataBufferIndex = myRtScene->myInstanceData->GetGlobalDescriptorIndex();
-  rtConsts.myMaterialDataBufferIndex = myRtScene->myMaterialData->GetGlobalDescriptorIndex();
-  rtConsts.mySampleBufferIndex = myRtScene->myHaltonSamples->GetGlobalDescriptorIndex();
+  rtConsts.myInstanceDataBufferIndex = instanceData->GetGlobalDescriptorIndex();
+  rtConsts.myMaterialDataBufferIndex = materialData->GetGlobalDescriptorIndex();
+  rtConsts.mySampleBufferIndex = haltonSamples->GetGlobalDescriptorIndex();
   rtConsts.myLightInstanceId = myLightInstanceIdx;
-  rtConsts.myNumHaltonSamples = myRtScene->myHaltonSamples->GetBuffer()->GetProperties().myNumElements;
+  rtConsts.myNumHaltonSamples = haltonSamples->GetBuffer()->GetProperties().myNumElements;
   rtConsts.myLightEmission = myLightEnabled ? myLightColor * myLightStrength : glm::float3( 0.0f );
   rtConsts.mySampleSky = mySampleSky ? 1u : 0u;
   rtConsts.mySkyFallbackEmission = glm::float3( mySkyFallbackIntensity );
   rtConsts.myPhongSpecularPower = myPhongSpecularPower;
-  rtConsts.myFrameRandomSeed = (uint) Time::ourFrameIdx;
+  rtConsts.myFrameRandomSeed = ( uint ) Time::ourFrameIdx;
   rtConsts.myNumAccumulationFrames = myNumAccumulationFrames++;
-  rtConsts.myLinearClampSamplerIndex = RenderCore::ourLinearClampSampler->GetGlobalDescriptorIndex();
-  rtConsts.myMaxRecursionDepth = (uint) myMaxRecursionDepth;
+  rtConsts.myLinearClampSamplerIndex =
+      RenderCore::GetTextureSampler( RenderCore::ourLinearClampSampler )->GetGlobalDescriptorIndex();
+  rtConsts.myMaxRecursionDepth = ( uint ) myMaxRecursionDepth;
   rtConsts.mySkyConsts = skyConsts;
   ctx->BindConstantBuffer( &rtConsts, sizeof( rtConsts ), 0 );
 
-  ctx->PrepareResourceShaderAccess( myHdrLightTexWrite.get() );
-  ctx->PrepareResourceShaderAccess( myRtScene->myTLAS->GetBufferRead() );
-  ctx->PrepareResourceShaderAccess( myRtScene->myInstanceData.get() );
-  ctx->PrepareResourceShaderAccess( myRtScene->myMaterialData.get() );
-  ctx->PrepareResourceShaderAccess( myRtScene->myHaltonSamples.get() );
+  ctx->PrepareResourceShaderAccess( hdrLightTexWrite );
+  ctx->PrepareResourceShaderAccess( tlas->GetBufferRead() );
+  ctx->PrepareResourceShaderAccess( instanceData );
+  ctx->PrepareResourceShaderAccess( materialData );
+  ctx->PrepareResourceShaderAccess( haltonSamples );
 
   DispatchRaysDesc desc;
   desc.myRayGenShaderTableRange = rtSbt->GetRayGenRange();
@@ -698,19 +783,19 @@ void PathTracer::RenderRT( CommandList * ctx ) {
   desc.myDepth = 1;
   ctx->DispatchRays( desc );
 
-  ctx->ResourceUAVbarrier( myHdrLightTexWrite->GetTexture() );
+  ctx->ResourceUAVbarrier( hdrLightTexWrite->GetTexture() );
 }
 
 void PathTracer::TonemapComposit( CommandList * ctx ) {
   GPU_SCOPED_PROFILER_FUNCTION( ctx, 0u );
 
-  ctx->SetShaderPipeline( myTonemapCompositShader.get() );
-  ctx->SetDepthStencilState( myDepthTestOff );
+  RenderOutput * renderOutput = RenderCore::GetRenderOutput( myRenderOutput );
+
+  ctx->SetShaderPipeline( RenderCore::GetShaderPipeline( myTonemapCompositShader ) );
+  ctx->SetDepthStencilState( RenderCore::GetDepthStencilState( myDepthTestOff ) );
   ctx->SetCullMode( CullMode::NONE );
-  ctx->SetViewport(
-      glm::uvec4( 0, 0, myRenderOutput->GetWindow()->GetWidth(), myRenderOutput->GetWindow()->GetHeight() ) );
-  ctx->SetClipRect(
-      glm::uvec4( 0, 0, myRenderOutput->GetWindow()->GetWidth(), myRenderOutput->GetWindow()->GetHeight() ) );
+  ctx->SetViewport( glm::uvec4( 0, 0, renderOutput->GetWindow()->GetWidth(), renderOutput->GetWindow()->GetHeight() ) );
+  ctx->SetClipRect( glm::uvec4( 0, 0, renderOutput->GetWindow()->GetWidth(), renderOutput->GetWindow()->GetHeight() ) );
 
   struct TonemapConsts {
     bool myIsBGR;
@@ -720,18 +805,21 @@ void PathTracer::TonemapComposit( CommandList * ctx ) {
 
     glm::float2 myPixelToUv;
   } tonemapConsts;
-  tonemapConsts.myIsBGR = myRenderOutput->GetBackbuffer()->GetProperties().myFormat == DataFormat::BGRA_8 ? 1 : 0;
-  tonemapConsts.mySrcTextureIdx = myHdrLightTexRead->GetGlobalDescriptorIndex();
-  tonemapConsts.myLinearClampSamplerIndex = RenderCore::ourLinearClampSampler->GetGlobalDescriptorIndex();
-  tonemapConsts.myPixelToUv = glm::float2( 1.0f ) / glm::float2( myRenderOutput->GetWindow()->GetWidth(),
-                                                                 myRenderOutput->GetWindow()->GetHeight() );
+
+  TextureView * hdrLightTexRead = RenderCore::GetTextureView( myHdrLightTexRead );
+  tonemapConsts.myIsBGR = renderOutput->GetBackbuffer()->GetProperties().myFormat == DataFormat::BGRA_8 ? 1 : 0;
+  tonemapConsts.mySrcTextureIdx = hdrLightTexRead->GetGlobalDescriptorIndex();
+  tonemapConsts.myLinearClampSamplerIndex =
+      RenderCore::GetTextureSampler( RenderCore::ourLinearClampSampler )->GetGlobalDescriptorIndex();
+  tonemapConsts.myPixelToUv = glm::float2( 1.0f ) / glm::float2( renderOutput->GetWindow()->GetWidth(),
+                                                                 renderOutput->GetWindow()->GetHeight() );
   tonemapConsts.myNumAccumulationFrames = myNumAccumulationFrames;
   ctx->BindConstantBuffer( &tonemapConsts, sizeof( tonemapConsts ), 0 );
-  ctx->PrepareResourceShaderAccess( myHdrLightTexRead.get() );
+  ctx->PrepareResourceShaderAccess( hdrLightTexRead );
 
   glm::float2 fsTriangleVerts[] = { { -4.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 4.0f } };
   ctx->BindVertexBuffer( fsTriangleVerts, sizeof( fsTriangleVerts ) );
-  ctx->SetRenderTarget( myRenderOutput->GetBackbufferRtv(), nullptr );
+  ctx->SetRenderTarget( renderOutput->GetBackbufferRtv(), nullptr );
   ctx->DrawInstanced( 3, 1, 0, 0 );
 }
 
@@ -745,8 +833,18 @@ void PathTracer::OnRtPipelineRecompiled( const RtPipelineState * aRtPipeline ) {
 
 void PathTracer::UpdateOutputTexture() {
   RenderCore::WaitForIdle( CommandListType::Graphics );
-  uint width = myRenderOutput->GetWindow()->GetWidth();
-  uint height = myRenderOutput->GetWindow()->GetHeight();
+
+  if ( myHdrLightTexRead.IsValid() )
+    RenderCore::DeleteTextureView( myHdrLightTexRead );
+  if ( myHdrLightTexWrite.IsValid() )
+    RenderCore::DeleteTextureView( myHdrLightTexWrite );
+  if ( myHdrLightTexRtv.IsValid() )
+    RenderCore::DeleteTextureView( myHdrLightTexRtv );
+  if ( myHdrLightTex.IsValid() )
+    RenderCore::DeleteTexture( myHdrLightTex );
+
+  uint width = RenderCore::GetRenderOutput( myRenderOutput )->GetWindow()->GetWidth();
+  uint height = RenderCore::GetRenderOutput( myRenderOutput )->GetWindow()->GetHeight();
 
   if ( myHalfResRender ) {
     width = ( width + 1 ) / 2;
@@ -761,26 +859,32 @@ void PathTracer::UpdateOutputTexture() {
   props.myWidth = width;
   props.myHeight = height;
   props.myNumMipLevels = 1u;
-  SharedPtr< Texture > texture = RenderCore::CreateTexture( props, "Light output texture" );
-  ASSERT( texture );
+  myHdrLightTex = RenderCore::CreateTexture( props, "Light output texture" );
+  ASSERT( myHdrLightTex.IsValid() );
+  Texture * lightTex = RenderCore::GetTexture( myHdrLightTex );
 
   TextureViewProperties viewProps;
-  myHdrLightTexRead = RenderCore::CreateTextureView( texture, viewProps, "Light output texture read" );
-  ASSERT( myHdrLightTexRead );
+  myHdrLightTexRead = RenderCore::CreateTextureView( lightTex, viewProps, "Light output texture read" );
+  ASSERT( myHdrLightTexRead.IsValid() );
 
   viewProps.myIsShaderWritable = true;
-  myHdrLightTexWrite = RenderCore::CreateTextureView( texture, viewProps, "Light output texture write" );
-  ASSERT( myHdrLightTexWrite );
+  myHdrLightTexWrite = RenderCore::CreateTextureView( lightTex, viewProps, "Light output texture write" );
+  ASSERT( myHdrLightTexWrite.IsValid() );
 
   viewProps.myIsRenderTarget = true;
   viewProps.myIsShaderWritable = false;
-  myHdrLightTexRtv = RenderCore::CreateTextureView( texture, viewProps, "Light output texture rtv" );
-  ASSERT( myHdrLightTexRtv );
+  myHdrLightTexRtv = RenderCore::CreateTextureView( lightTex, viewProps, "Light output texture rtv" );
+  ASSERT( myHdrLightTexRtv.IsValid() );
 }
 
 void PathTracer::UpdateDepthbuffer() {
-  uint width = myRenderOutput->GetWindow()->GetWidth();
-  uint height = myRenderOutput->GetWindow()->GetHeight();
+  if ( myDepthStencilDsv.IsValid() )
+    RenderCore::DeleteTextureView( myDepthStencilDsv );
+  if ( myDepthStencilTex.IsValid() )
+    RenderCore::DeleteTexture( myDepthStencilTex );
+
+  uint width = RenderCore::GetRenderOutput( myRenderOutput )->GetWindow()->GetWidth();
+  uint height = RenderCore::GetRenderOutput( myRenderOutput )->GetWindow()->GetHeight();
 
   TextureProperties dsTexProps;
   dsTexProps.myDimension = GpuResourceDimension::TEXTURE_2D;
@@ -792,16 +896,17 @@ void PathTracer::UpdateDepthbuffer() {
   dsTexProps.myHeight = height;
   dsTexProps.myNumMipLevels = 1u;
 
-  SharedPtr< Texture > dsTexture = RenderCore::CreateTexture( dsTexProps, "Backbuffer DepthStencil Texture" );
-  ASSERT( dsTexture != nullptr );
+  myDepthStencilTex = RenderCore::CreateTexture( dsTexProps, "Backbuffer DepthStencil Texture" );
+  ASSERT( myDepthStencilTex.IsValid() );
+  Texture * dsTex = RenderCore::GetTexture( myDepthStencilTex );
 
   TextureViewProperties props;
   props.myDimension = GpuResourceDimension::TEXTURE_2D;
   props.myIsRenderTarget = true;
   props.myFormat = DataFormat::D_24UNORM_S_8UI;
-  props.mySubresourceRange = dsTexture->mySubresources;
-  myDepthStencilDsv = RenderCore::CreateTextureView( dsTexProps, props, "DepthStencil Texture" );
-  ASSERT( myDepthStencilDsv != nullptr );
+  props.mySubresourceRange = dsTex->mySubresources;
+  myDepthStencilDsv = RenderCore::CreateTextureView( dsTex, props, "DepthStencil Texture" );
+  ASSERT( myDepthStencilDsv.IsValid() );
 }
 
 void PathTracer::RestartAccumulation() {

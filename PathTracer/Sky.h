@@ -2,7 +2,7 @@
 
 #include "Common/FancyCoreDefines.h"
 #include "Common/MathIncludes.h"
-#include "Common/Ptr.h"
+#include "Rendering/ResourceHandle.h"
 
 namespace Fancy {
   class Camera;
@@ -83,15 +83,17 @@ public:
   AtmosphereParameters myAtmosphereParams;
 
   // private:
-  SharedPtr< TextureView > myTransmittanceLutRead;
-  SharedPtr< TextureView > myTransmittanceLutWrite;
-  SharedPtr< TextureView > mySkyViewLutRead;
-  SharedPtr< TextureView > mySkyViewLutWrite;
-  SharedPtr< ShaderPipeline > myComputeTransmittanceLut;
-  SharedPtr< ShaderPipeline > myComputeSkyViewLut;
-  SharedPtr< ShaderPipeline > myComputeRaymarching;
-  SharedPtr< ShaderPipeline > myRenderSkyShader;
-  SharedPtr< TextureSampler > myLinearClampSampler;
+  TextureHandle myTransmittanceLutTex;
+  TextureViewHandle myTransmittanceLutRead;
+  TextureViewHandle myTransmittanceLutWrite;
+  TextureHandle mySkyViewLutTex;
+  TextureViewHandle mySkyViewLutRead;
+  TextureViewHandle mySkyViewLutWrite;
+  ShaderPipelineHandle myComputeTransmittanceLut;
+  ShaderPipelineHandle myComputeSkyViewLut;
+  ShaderPipelineHandle myComputeRaymarching;
+  ShaderPipelineHandle myRenderSkyShader;
+  TextureSamplerHandle myLinearClampSampler;
 
   SkyParameters myParams;
 };

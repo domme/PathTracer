@@ -3,6 +3,7 @@
 
 #include "imgui.h"
 
+#include "Rendering/RenderCore.h"
 #include "Rendering/Texture.h"
 #include "Common/MathUtil.h"
 
@@ -10,8 +11,8 @@ bool Sky_Imgui::Update( Sky * aSky ) {
   myImgui_settingsChanged = false;
   // ImGui::Begin("Sky", &myImgui_windowOpen);
 
-  myImgui_TransmittanceLutImg.Update( aSky->myTransmittanceLutRead.get(), "Transmittance LUT" );
-  myImgui_SkyViewLutImg.Update( aSky->mySkyViewLutRead.get(), "Sky-View LUT" );
+  myImgui_TransmittanceLutImg.Update( RenderCore::GetTextureView( aSky->myTransmittanceLutRead ), "Transmittance LUT" );
+  myImgui_SkyViewLutImg.Update( RenderCore::GetTextureView( aSky->mySkyViewLutRead ), "Sky-View LUT" );
 
   bool skyParamsChanged = false;
 

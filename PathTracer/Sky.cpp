@@ -63,8 +63,6 @@ Sky::Sky( const SkyParameters & someParams ) : myParams( someParams ) {
       "resources/shaders/sky/compute_transmittance_lut.hlsl", "main", "OPTICAL_DEPTH_ONLY" );
   myComputeSkyViewLut =
       RenderCore::CreateComputeShaderPipeline( "resources/shaders/sky/compute_skyView_lut.hlsl", "main" );
-  // myComputeRaymarching = RenderCore::CreateComputeShaderPipeline("resources/shaders/sky/RenderSkyRayMarching.hlsl",
-  // "ComputeRaymarching");
   myRenderSkyShader = RenderCore::CreateComputeShaderPipeline( "resources/shaders/render_sky.hlsl" );
 
   // Transmittance lut texture
@@ -74,7 +72,8 @@ Sky::Sky( const SkyParameters & someParams ) : myParams( someParams ) {
     props.myHeight = Priv_Sky::SkyLutConsts::TRANSMITTANCE_TEXTURE_HEIGHT;
     props.myFormat = DataFormat::RGBA_16F;
     props.myIsShaderWritable = true;
-    SharedPtr< Texture > transmittanceLutTex = RenderCore::CreateTexture( props, "Transmittance Lut" );
+    myTransmittanceLutTex = RenderCore::CreateTexture( props, "Transmittance Lut" );
+    Texture * transmittanceLutTex = RenderCore::GetTexture( myTransmittanceLutTex );
 
     TextureViewProperties viewProps;
     myTransmittanceLutRead = RenderCore::CreateTextureView( transmittanceLutTex, viewProps, "Transmittance Lut Srv" );
@@ -90,7 +89,8 @@ Sky::Sky( const SkyParameters & someParams ) : myParams( someParams ) {
     props.myHeight = Priv_Sky::SkyLutConsts::SKY_VIEW_TEXTURE_HEIGHT;
     props.myFormat = DataFormat::RGB_11_11_10F;
     props.myIsShaderWritable = true;
-    SharedPtr< Texture > skyViewLutTex = RenderCore::CreateTexture( props, "Sky view Lut" );
+    mySkyViewLutTex = RenderCore::CreateTexture( props, "Sky view Lut" );
+    Texture * skyViewLutTex = RenderCore::GetTexture( mySkyViewLutTex );
 
     TextureViewProperties viewProps;
     mySkyViewLutRead = RenderCore::CreateTextureView( skyViewLutTex, viewProps, "Sky view Lut Srv" );
@@ -108,7 +108,21 @@ Sky::Sky( const SkyParameters & someParams ) : myParams( someParams ) {
   }
 }
 
-Sky::~Sky() {}
+Sky::~Sky() {
+  if ( myTransmittanceLutRead.IsValid() )
+    RenderCore::DeleteTextureView( myTransmittanceLutRead );
+  if ( myTransmittanceLutWrite.IsValid() )
+    RenderCore::DeleteTextureView( myTransmittanceLutWrite );
+  if ( myTransmittanceLutTex.IsValid() )
+    RenderCore::DeleteTexture( myTransmittanceLutTex );
+  if ( mySkyViewLutRead.IsValid() )
+    RenderCore::DeleteTextureView( mySkyViewLutRead );
+  if ( mySkyViewLutWrite.IsValid() )
+    RenderCore::DeleteTextureView( mySkyViewLutWrite );
+  if ( mySkyViewLutTex.IsValid() )
+    RenderCore::DeleteTexture( mySkyViewLutTex );
+  // Shader pipelines and sampler are cached resources; not owned by Sky
+}
 
 void Sky::ComputeTranmittanceLut( CommandList * ctx ) {
   using namespace Priv_Sky;
@@ -124,13 +138,13 @@ void Sky::ComputeTranmittanceLut( CommandList * ctx ) {
   consts.myAtmosphereParameters = myAtmosphereParams;
   consts.myTransmittanceTextureRes = { SkyLutConsts::TRANSMITTANCE_TEXTURE_WIDTH,
                                        SkyLutConsts::TRANSMITTANCE_TEXTURE_HEIGHT };
-  consts.myOutTexIdx = ctx->GetPrepareDescriptorIndex( myTransmittanceLutWrite.get() );
+  consts.myOutTexIdx = ctx->GetPrepareDescriptorIndex( RenderCore::GetTextureView( myTransmittanceLutWrite ) );
   ctx->BindConstantBuffer( &consts, sizeof( consts ), 0 );
 
-  ctx->SetShaderPipeline( myComputeTransmittanceLut.get() );
+  ctx->SetShaderPipeline( RenderCore::GetShaderPipeline( myComputeTransmittanceLut ) );
   ctx->Dispatch( { SkyLutConsts::TRANSMITTANCE_TEXTURE_WIDTH, SkyLutConsts::TRANSMITTANCE_TEXTURE_HEIGHT, 1 } );
 
-  ctx->ResourceUAVbarrier( myTransmittanceLutWrite->GetTexture() );
+  ctx->ResourceUAVbarrier( RenderCore::GetTextureView( myTransmittanceLutWrite )->GetTexture() );
 }
 
 void Sky::ComputeSkyViewLut( CommandList * ctx, const Camera & aCamera ) {
@@ -159,18 +173,19 @@ void Sky::ComputeSkyViewLut( CommandList * ctx, const Camera & aCamera ) {
   consts.myAtmosphereParameters = myAtmosphereParams;
   consts.myInvViewProj = glm::inverse( aCamera.myViewProj );
   consts.mySunIlluminance = mySunIlluminance;
-  consts.myLinearClampSamplerIdx = myLinearClampSampler->GetGlobalDescriptorIndex();
+  consts.myLinearClampSamplerIdx = RenderCore::GetTextureSampler( myLinearClampSampler )->GetGlobalDescriptorIndex();
   consts.mySunDirection = mySunDir;
-  consts.myTransmissionLutTexIdx = ctx->GetPrepareDescriptorIndex( myTransmittanceLutRead.get() );
+  consts.myTransmissionLutTexIdx =
+      ctx->GetPrepareDescriptorIndex( RenderCore::GetTextureView( myTransmittanceLutRead ) );
   consts.myCameraPos = aCamera.myPosition;
-  consts.myOutTexIdx = ctx->GetPrepareDescriptorIndex( mySkyViewLutWrite.get() );
+  consts.myOutTexIdx = ctx->GetPrepareDescriptorIndex( RenderCore::GetTextureView( mySkyViewLutWrite ) );
   consts.myRayMarchMinMaxSPP = glm::float2( 4.0f, 14.0f );
   consts.mySkyViewTextureRes = { SkyLutConsts::SKY_VIEW_TEXTURE_WIDTH, SkyLutConsts::SKY_VIEW_TEXTURE_HEIGHT };
   ctx->BindConstantBuffer( &consts, sizeof( consts ), 0u );
 
-  ctx->SetShaderPipeline( myComputeSkyViewLut.get() );
+  ctx->SetShaderPipeline( RenderCore::GetShaderPipeline( myComputeSkyViewLut ) );
   ctx->Dispatch( { SkyLutConsts::SKY_VIEW_TEXTURE_WIDTH, SkyLutConsts::SKY_VIEW_TEXTURE_HEIGHT, 1 } );
-  ctx->ResourceUAVbarrier( mySkyViewLutWrite->GetTexture() );
+  ctx->ResourceUAVbarrier( RenderCore::GetTextureView( mySkyViewLutWrite )->GetTexture() );
 }
 
 void Sky::Render( CommandList * ctx, TextureView * aDestTextureWrite, TextureView * aDepthBufferRead,
@@ -200,17 +215,19 @@ void Sky::Render( CommandList * ctx, TextureView * aDestTextureWrite, TextureVie
 
   cbuffer.myInvResolution = glm::float2( 1.0f, 1.0f ) / glm::float2( texSize );
   cbuffer.myOutTexIdx = ctx->GetPrepareDescriptorIndex( aDestTextureWrite );
-  cbuffer.mySkyViewLutTextureIndex = ctx->GetPrepareDescriptorIndex( mySkyViewLutRead.get() );
+  cbuffer.mySkyViewLutTextureIndex = ctx->GetPrepareDescriptorIndex( RenderCore::GetTextureView( mySkyViewLutRead ) );
   cbuffer.myInvViewProj = glm::inverse( aCamera.myViewProj );
   cbuffer.myViewPos = aCamera.myPosition;
   cbuffer.myAtmosphereBottomRadius = myAtmosphereParams.BottomRadius;
   cbuffer.mySunDirection = mySunDir;
-  cbuffer.myLinearClampSamplerIndex = myLinearClampSampler->GetGlobalDescriptorIndex();
-  cbuffer.mySkyViewLutTextureRes = { mySkyViewLutRead->GetTexture()->GetProperties().myWidth,
-                                     mySkyViewLutRead->GetTexture()->GetProperties().myHeight };
+  cbuffer.myLinearClampSamplerIndex = RenderCore::GetTextureSampler( myLinearClampSampler )->GetGlobalDescriptorIndex();
+  cbuffer.mySkyViewLutTextureRes = {
+    RenderCore::GetTextureView( mySkyViewLutRead )->GetTexture()->GetProperties().myWidth,
+    RenderCore::GetTextureView( mySkyViewLutRead )->GetTexture()->GetProperties().myHeight
+  };
   ctx->BindConstantBuffer( &cbuffer, sizeof( cbuffer ), 0 );
 
-  ctx->SetShaderPipeline( myRenderSkyShader.get() );
+  ctx->SetShaderPipeline( RenderCore::GetShaderPipeline( myRenderSkyShader ) );
 
   ctx->Dispatch( { texSize.x, texSize.y, 1 } );
 
