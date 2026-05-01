@@ -15,9 +15,9 @@ public:
   bool HaveSettingsChanged();
 
 private:
-  bool myImgui_windowOpen = false;
-  bool myImgui_showTransmittanceLut = false;
-  bool myImgui_settingsChanged = false;
+  bool                   myImgui_windowOpen = false;
+  bool                   myImgui_showTransmittanceLut = false;
+  bool                   myImgui_settingsChanged = false;
   Fancy::ImGuiDebugImage myImgui_TransmittanceLutImg;
   Fancy::ImGuiDebugImage myImgui_SkyViewLutImg;
 };

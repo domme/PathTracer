@@ -131,8 +131,8 @@ void Sky::ComputeTranmittanceLut( CommandList * ctx ) {
 
   struct Constants {
     AtmosphereParameters myAtmosphereParameters;
-    glm::uvec2 myTransmittanceTextureRes;
-    uint myOutTexIdx;
+    glm::uvec2           myTransmittanceTextureRes;
+    uint                 myOutTexIdx;
   } consts;
 
   consts.myAtmosphereParameters = myAtmosphereParams;
@@ -158,16 +158,16 @@ void Sky::ComputeSkyViewLut( CommandList * ctx, const Camera & aCamera ) {
     glm::float4x4 myInvViewProj;
 
     glm::float3 mySunIlluminance;
-    uint myLinearClampSamplerIdx;
+    uint        myLinearClampSamplerIdx;
 
     glm::float3 mySunDirection;
-    uint myTransmissionLutTexIdx;
+    uint        myTransmissionLutTexIdx;
 
     glm::float3 myCameraPos;
-    uint myOutTexIdx;
+    uint        myOutTexIdx;
 
     glm::float2 myRayMarchMinMaxSPP;
-    glm::uvec2 mySkyViewTextureRes;
+    glm::uvec2  mySkyViewTextureRes;
   } consts;
 
   consts.myAtmosphereParameters = myAtmosphereParams;
@@ -199,16 +199,16 @@ void Sky::Render( CommandList * ctx, TextureView * aDestTextureWrite, TextureVie
 
   struct Cbuffer {
     glm::float2 myInvResolution;
-    uint myOutTexIdx;
-    uint mySkyViewLutTextureIndex;
+    uint        myOutTexIdx;
+    uint        mySkyViewLutTextureIndex;
 
     glm::float4x4 myInvViewProj;
 
     glm::float3 myViewPos;
-    float myAtmosphereBottomRadius;
+    float       myAtmosphereBottomRadius;
 
     glm::float3 mySunDirection;
-    uint myLinearClampSamplerIndex;
+    uint        myLinearClampSamplerIndex;
 
     glm::uvec2 mySkyViewLutTextureRes;
   } cbuffer;

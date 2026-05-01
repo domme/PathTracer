@@ -77,18 +77,18 @@ public:
   void Render( CommandList * ctx, TextureView * aDestTextureWrite, TextureView * aDepthBufferRead,
                const Camera & aCamera );
 
-  float myMultiScatteringFactor = 0.0f;
-  glm::float3 mySunDir = glm::float3( 0, 1, 0 );
-  glm::float3 mySunIlluminance = glm::float3( 1000.0f );
+  float                myMultiScatteringFactor = 0.0f;
+  glm::float3          mySunDir = glm::float3( 0, 1, 0 );
+  glm::float3          mySunIlluminance = glm::float3( 1000.0f );
   AtmosphereParameters myAtmosphereParams;
 
   // private:
-  TextureHandle myTransmittanceLutTex;
-  TextureViewHandle myTransmittanceLutRead;
-  TextureViewHandle myTransmittanceLutWrite;
-  TextureHandle mySkyViewLutTex;
-  TextureViewHandle mySkyViewLutRead;
-  TextureViewHandle mySkyViewLutWrite;
+  TextureHandle        myTransmittanceLutTex;
+  TextureViewHandle    myTransmittanceLutRead;
+  TextureViewHandle    myTransmittanceLutWrite;
+  TextureHandle        mySkyViewLutTex;
+  TextureViewHandle    mySkyViewLutRead;
+  TextureViewHandle    mySkyViewLutWrite;
   ShaderPipelineHandle myComputeTransmittanceLut;
   ShaderPipelineHandle myComputeSkyViewLut;
   ShaderPipelineHandle myComputeRaymarching;

@@ -6,6 +6,9 @@ file(GLOB PATHTRACER_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
 )
 
+# Organize source files into filters based on directory structure
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${PATHTRACER_SOURCES})
+
 add_executable(PathTracer WIN32 ${PATHTRACER_SOURCES})
 
 target_include_directories(PathTracer

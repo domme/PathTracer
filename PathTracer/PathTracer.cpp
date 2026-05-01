@@ -31,9 +31,9 @@ static float64 SampleTimeMs() {
 }
 
 struct SceneLoadInfo {
-  eastl::fixed_string< char, 64, false > myDisplayName;
+  eastl::fixed_string< char, 64, false >  myDisplayName;
   eastl::fixed_string< char, 256, false > myPath;
-  glm::float3 myCamPos = glm::float3( 0.0f );
+  glm::float3                             myCamPos = glm::float3( 0.0f );
 };
 
 SceneLoadInfo sceneLoadInfos[] = {
@@ -78,7 +78,7 @@ RaytracingScene::~RaytracingScene() {
 
 PathTracer::PathTracer( HINSTANCE anInstanceHandle, const char ** someArguments, uint aNumArguments, const char * aName,
                         const Fancy::RenderPlatformProperties & someRenderProperties,
-                        const Fancy::WindowParameters & someWindowParams )
+                        const Fancy::WindowParameters &         someWindowParams )
     : Application( anInstanceHandle, someArguments, aNumArguments, aName, "../../../../", someRenderProperties,
                    someWindowParams ),
       myImGuiContext( ImGui::CreateContext() ) {
@@ -119,9 +119,9 @@ void PathTracer::LoadScene( const char * aPath, const glm::float3 & aCamPos ) {
     { VertexAttributeSemantic::TEXCOORD, 0, DataFormat::RG_32F }
   };
 
-  SceneData sceneData;
+  SceneData    sceneData;
   MeshImporter importer;
-  const bool importSuccess = importer.Import( aPath, vertexAttributes, sceneData );
+  const bool   importSuccess = importer.Import( aPath, vertexAttributes, sceneData );
   if ( !importSuccess ) {
     Log( "Failed importing scene %s", aPath );
   }
@@ -233,8 +233,8 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
     for ( const MeshPartData & meshPart : mesh.myParts ) {
       const VertexInputLayoutProperties & vertexProps = meshPart.myVertexLayoutProperties;
 
-      const uint srcVertexStride = vertexProps.GetOverallVertexSize();
-      const uint numVertices = VECTOR_BYTESIZE( meshPart.myVertexData ) / srcVertexStride;
+      const uint    srcVertexStride = vertexProps.GetOverallVertexSize();
+      const uint    numVertices = VECTOR_BYTESIZE( meshPart.myVertexData ) / srcVertexStride;
       const uint8 * srcData = meshPart.myVertexData.data();
       for ( uint i = 0u; i < numVertices; ++i ) {
         VertexData & dstData = vertexData.push_back();
@@ -317,7 +317,7 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
 
   struct MaterialData {
     glm::float3 myEmission;
-    uint myColor;
+    uint        myColor;
   };
   eastl::vector< MaterialData > materialDatas;
   materialDatas.reserve( aScene.myMaterials.size() );
@@ -396,7 +396,7 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
 }
 
 void PathTracer::InitSampleSequences() {
-  uint sampleCount = 8192;
+  uint                         sampleCount = 8192;
   eastl::vector< glm::float2 > someSamples;
   someSamples.reserve( sampleCount );
 
@@ -600,8 +600,8 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
   mySky->ComputeSkyViewLut( ctx, myCamera );
 
   TextureView * hdrLightTexRead = RenderCore::GetTextureView( myHdrLightTexRead );
-  uint dstTexWidth = hdrLightTexRead->GetTexture()->GetProperties().myWidth;
-  uint dstTexHeight = hdrLightTexRead->GetTexture()->GetProperties().myHeight;
+  uint          dstTexWidth = hdrLightTexRead->GetTexture()->GetProperties().myWidth;
+  uint          dstTexHeight = hdrLightTexRead->GetTexture()->GetProperties().myHeight;
 
   ctx->SetViewport( glm::uvec4( 0, 0, dstTexWidth, dstTexHeight ) );
   ctx->SetClipRect( glm::uvec4( 0, 0, dstTexWidth, dstTexHeight ) );
@@ -629,8 +629,8 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
       const VertexInputLayout * layout = RenderCore::GetVertexInputLayout( meshPart->myVertexInputLayout );
 
       const GpuBuffer * vertexBuffer = RenderCore::GetBuffer( meshPart->myVertexBuffer );
-      uint64 offset = 0ull;
-      uint64 size = vertexBuffer->GetByteSize();
+      uint64            offset = 0ull;
+      uint64            size = vertexBuffer->GetByteSize();
       ctx->BindVertexBuffers( &vertexBuffer, &offset, &size, 1u, layout );
       const GpuBuffer * indexBuffer = RenderCore::GetBuffer( meshPart->myIndexBuffer );
       ctx->BindIndexBuffer( indexBuffer, indexBuffer->GetProperties().myElementSizeBytes );
@@ -640,13 +640,13 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
   };
 
   for ( SceneMeshInstance & meshInstance : myScene->myInstances ) {
-    Mesh * mesh = myScene->myMeshes[ meshInstance.myMeshIndex ].get();
+    Mesh *        mesh = Assets::GetMesh( myScene->myMeshes[ meshInstance.myMeshIndex ] );
     glm::float4x4 transform = meshInstance.myTransform;
-    Material * material = myScene->myMaterials[ meshInstance.myMaterialIndex ].get();
+    Material *    material = Assets::GetMaterial( myScene->myMaterials[ meshInstance.myMaterialIndex ] );
 
     struct Cbuffer_PerObject {
       glm::float4x4 myWorldViewProj;
-      glm::float4 myColor;
+      glm::float4   myColor;
     };
     Cbuffer_PerObject cbuffer_perObject{ myCamera.myViewProj * transform,
                                          material->myParameters[ ( uint ) MaterialParameterType::COLOR ] };
@@ -660,8 +660,8 @@ void PathTracer::RenderRT( CommandList * ctx ) {
   GPU_SCOPED_PROFILER_FUNCTION( ctx, 0u );
 
   TextureView * hdrLightTexRead = RenderCore::GetTextureView( myHdrLightTexRead );
-  uint dstTexWidth = hdrLightTexRead->GetTexture()->GetProperties().myWidth;
-  uint dstTexHeight = hdrLightTexRead->GetTexture()->GetProperties().myHeight;
+  uint          dstTexWidth = hdrLightTexRead->GetTexture()->GetProperties().myWidth;
+  uint          dstTexHeight = hdrLightTexRead->GetTexture()->GetProperties().myHeight;
 
   TextureView * hdrLightTexWrite = RenderCore::GetTextureView( myHdrLightTexWrite );
 
@@ -677,8 +677,8 @@ void PathTracer::RenderRT( CommandList * ctx ) {
     myNumAccumulationFrames = 0u;
   }
 
-  RtPipelineState * rtPso = myRenderAo ? RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )
-                                       : RenderCore::GetRtPipelineState( myRtScene->myRtPso );
+  RtPipelineState *      rtPso = myRenderAo ? RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )
+                                            : RenderCore::GetRtPipelineState( myRtScene->myRtPso );
   RtShaderBindingTable * rtSbt = myRenderAo ? RenderCore::GetRtShaderBindingTable( myRtScene->myAoSBT )
                                             : RenderCore::GetRtShaderBindingTable( myRtScene->mySBT );
   ctx->SetRaytracingPipelineState( rtPso );
@@ -690,10 +690,10 @@ void PathTracer::RenderRT( CommandList * ctx ) {
     AtmosphereParameters myAtmosphere;
 
     glm::float3 mySunDirection;
-    uint myTransmissionLutTexIdx;
+    uint        myTransmissionLutTexIdx;
 
     glm::float3 mySunIlluminance;
-    float _unused;
+    float       _unused;
 
     glm::float2 myRayMarchMinMaxSPP;
     glm::float2 _unused2;
@@ -708,16 +708,16 @@ void PathTracer::RenderRT( CommandList * ctx ) {
 
   struct RtConsts {
     glm::float3 myNearPlaneCorner;
-    float myAoDistance;
+    float       myAoDistance;
 
     glm::float3 myXAxis;
-    uint myOutTexIndex;
+    uint        myOutTexIndex;
 
     glm::float3 myYAxis;
-    uint myAsIndex;
+    uint        myAsIndex;
 
     glm::float3 myCameraPos;
-    uint myInstanceDataBufferIndex;
+    uint        myInstanceDataBufferIndex;
 
     uint myMaterialDataBufferIndex;
     uint mySampleBufferIndex;
@@ -730,18 +730,18 @@ void PathTracer::RenderRT( CommandList * ctx ) {
     uint myNumHaltonSamples;
 
     glm::float3 myLightEmission;
-    uint mySampleSky;
+    uint        mySampleSky;
 
     glm::float3 mySkyFallbackEmission;
-    float myPhongSpecularPower;
+    float       myPhongSpecularPower;
 
     SkyConstants mySkyConsts;
 
   } rtConsts;
 
-  GpuBufferView * instanceData = RenderCore::GetBufferView( myRtScene->myInstanceData );
-  GpuBufferView * materialData = RenderCore::GetBufferView( myRtScene->myMaterialData );
-  GpuBufferView * haltonSamples = RenderCore::GetBufferView( myRtScene->myHaltonSamples );
+  GpuBufferView *           instanceData = RenderCore::GetBufferView( myRtScene->myInstanceData );
+  GpuBufferView *           materialData = RenderCore::GetBufferView( myRtScene->myMaterialData );
+  GpuBufferView *           haltonSamples = RenderCore::GetBufferView( myRtScene->myHaltonSamples );
   RtAccelerationStructure * tlas = RenderCore::GetRtAccelerationStructure( myRtScene->myTLAS );
 
   rtConsts.myNearPlaneCorner = nearPlaneVertices[ 0 ];

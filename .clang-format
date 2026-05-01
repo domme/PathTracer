@@ -46,6 +46,14 @@ AllowShortLoopsOnASingleLine: false
 # ----- Includes -----
 SortIncludes: Never
 
+# ----- Alignment -----
+AlignConsecutiveDeclarations: true  # align variable names in consecutive declarations
+
+# ----- Comments -----
+# Manual: Place "//---------------------------------------------------------------------------//" 
+# separator lines between function definitions in .cpp files for readability.
+# clang-format does not have an automated option for this; it must be maintained by hand.
+
 # ----- Misc -----
 Cpp11BracedListStyle: false
 SpaceBeforeAssignmentOperators: true

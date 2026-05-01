@@ -44,40 +44,116 @@ ResourcePool uses this strategy: `ResourcePool< T, DestructorT, StaticCapacity >
 
 ---
 
-## Spacing — Brackets
+## Formatting & Code Style
 
-Insert a space after every opening bracket and before every closing bracket. This applies to **all bracket types**: `( )`, `[ ]`, and `< >` (template angle brackets).  
-Empty bracket pairs are left as-is: `()`, `[]`.
+All C++ code is formatted with **clang-format** (configuration in `.clang-format` at project root).
+
+### Indentation & Spacing
+
+- **Indentation:** 2 spaces per level
+- **Namespace contents:** indented by 2 spaces
+- **Opening braces:** same line as declaration (Attach style)
+  ```cpp
+  void SomeFunction() {
+    // body
+  }
+  
+  class Foo {
+  };
+  ```
+
+### Brackets — Spacing
+
+Insert a space after opening brackets and before closing brackets in **all bracket types**: `( )`, `[ ]`, `< >`.  
+Empty brackets are left as-is: `()`, `[]`.
 
 ```cpp
-// ✅ correct — function calls
+// ✅ correct
 alloca( sizeof( D3D12_PLACED_SUBRESOURCE_FOOTPRINT ) * aNumSubresources )
 GetDevice()->CreateTexture( desc, someData )
-
-// ✅ correct — C-style casts (space after closing bracket too)
-( uint ) someValue
-( D3D12_RESOURCE_STATES ) 0u
-static_cast< D3D12_PLACED_SUBRESOURCE_FOOTPRINT * >( alloca( ... ) )
-
-// ✅ correct — array subscripts
 myBuffers[ i ]
-someArray[ index + 1 ]
-
-// ✅ correct — template angle brackets
 SharedPtr< GpuBuffer >
-eastl::vector< GpuRingBuffer * >
-eastl::fixed_vector< glm::float3, 4 >
 static_cast< D3D12_PLACED_SUBRESOURCE_FOOTPRINT * >( alloca( ... ) )
 
 // ❌ wrong
 alloca(sizeof(D3D12_PLACED_SUBRESOURCE_FOOTPRINT) * aNumSubresources)
-( uint )someValue
-myBuffers[i]
 SharedPtr<GpuBuffer>
-static_cast<D3D12_PLACED_SUBRESOURCE_FOOTPRINT*>(alloca(...))
+myBuffers[i]
 ```
 
-Apply the same rule to function-template call sites and template parameter lists in declarations.
+### Pointers & References — Alignment
+
+Pointer/reference symbols go **next to the type**, with a space before the variable name:
+
+```cpp
+// ✅ correct
+const GpuBuffer * aBuffer
+const GpuBufferProperties & someProperties
+GpuBuffer * GetBuffer() const;
+
+// ❌ wrong
+const GpuBuffer *aBuffer
+const GpuBuffer* GetBuffer() const;
+```
+
+**Dereference/address-of in expressions:** symbol touches the operand:
+
+```cpp
+*someBuffer
+&myResource
+**ppData
+```
+
+### Column Limit & Line Length
+
+- **Maximum line length:** 120 characters
+- Favor **breaking long lines** over exceeding the limit
+
+### Variable Alignment in Consecutive Declarations
+
+When declaring multiple variables of the same type or related types in consecutive lines, align the variable names with tabs:
+
+```cpp
+// ✅ correct — names aligned
+ResourcePool< Texture, 2048 >    RenderCore::ourTexturePool;
+ResourcePool< GpuBuffer, 2048 >  RenderCore::ourBufferPool;
+TextureHandle                    RenderCore::ourDefaultDiffuseTexture;
+
+// Separator — empty line resets the alignment group
+TextureSamplerHandle             RenderCore::ourLinearClampSampler;
+```
+
+### Function Separators in .cpp Files
+
+Separate function definitions in `.cpp` files with a line of dashes:
+
+```cpp
+//---------------------------------------------------------------------------//
+int Foo::CalculateValue() {
+  return 42;
+}
+
+//---------------------------------------------------------------------------//
+void Foo::DoSomething() {
+  // ...
+}
+```
+
+**Note:** clang-format cannot enforce this automatically; maintain manually for readability.
+
+### Includes
+
+- **Order:** No automatic sorting; maintain logical grouping by hand
+- Preferred pattern: system headers, then engine headers, then local project headers
+  ```cpp
+  #include <cstring>
+  #include <vector>
+  
+  #include "fancy_core/Rendering/RenderCore.h"
+  #include "fancy_core/Common/Application.h"
+  
+  #include "MyLocal.h"
+  ```
 
 ---
 
@@ -155,6 +231,43 @@ namespace Fancy {
 //---------------------------------------------------------------------------//
 }
 ```
+
+---
+
+## Spacing — Brackets
+
+Insert a space after every opening bracket and before every closing bracket. This applies to **all bracket types**: `( )`, `[ ]`, and `< >` (template angle brackets).  
+Empty bracket pairs are left as-is: `()`, `[]`.
+
+```cpp
+// ✅ correct — function calls
+alloca( sizeof( D3D12_PLACED_SUBRESOURCE_FOOTPRINT ) * aNumSubresources )
+GetDevice()->CreateTexture( desc, someData )
+
+// ✅ correct — C-style casts (space after closing bracket too)
+( uint ) someValue
+( D3D12_RESOURCE_STATES ) 0u
+static_cast< D3D12_PLACED_SUBRESOURCE_FOOTPRINT * >( alloca( ... ) )
+
+// ✅ correct — array subscripts
+myBuffers[ i ]
+someArray[ index + 1 ]
+
+// ✅ correct — template angle brackets
+SharedPtr< GpuBuffer >
+eastl::vector< GpuRingBuffer * >
+eastl::fixed_vector< glm::float3, 4 >
+static_cast< D3D12_PLACED_SUBRESOURCE_FOOTPRINT * >( alloca( ... ) )
+
+// ❌ wrong
+alloca(sizeof(D3D12_PLACED_SUBRESOURCE_FOOTPRINT) * aNumSubresources)
+( uint )someValue
+myBuffers[i]
+SharedPtr<GpuBuffer>
+static_cast<D3D12_PLACED_SUBRESOURCE_FOOTPRINT*>(alloca(...))
+```
+
+Apply the same rule to function-template call sites and template parameter lists in declarations.
 
 ---
 
