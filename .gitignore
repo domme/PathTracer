@@ -46,3 +46,5 @@ PathTracer/pathtracer_runtimedependencies.txt
 resources/models/*/
 
 build.log
+
+build_output.txt
