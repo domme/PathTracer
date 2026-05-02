@@ -11,6 +11,8 @@
       "toolchainFile": "${sourceDir}/FANCY/external/vcpkg/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "VCPKG_MANIFEST_DIR": "${sourceDir}/FANCY",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/FANCY/vcpkg_installed",
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
       }
     }
