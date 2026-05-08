@@ -36,7 +36,7 @@ ReferenceAlignment: Middle         # Type & name
 DerivePointerAlignment: false
 
 # ----- Column limit -----
-ColumnLimit: 120
+ColumnLimit: 160
 
 # ----- Short constructs — keep on same line -----
 AllowShortFunctionsOnASingleLine: Empty

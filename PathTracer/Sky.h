@@ -74,8 +74,7 @@ public:
 
   void ComputeTranmittanceLut( CommandList * ctx );
   void ComputeSkyViewLut( CommandList * ctx, const Camera & aCamera );
-  void Render( CommandList * ctx, TextureView * aDestTextureWrite, TextureView * aDepthBufferRead,
-               const Camera & aCamera );
+  void Render( CommandList * ctx, TextureView * aDestTextureWrite, TextureView * aDepthBufferRead, const Camera & aCamera );
 
   float                myMultiScatteringFactor = 0.0f;
   glm::float3          mySunDir = glm::float3( 0, 1, 0 );

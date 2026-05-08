@@ -38,8 +38,7 @@ struct SceneLoadInfo {
 
 SceneLoadInfo sceneLoadInfos[] = {
   { "Cornell Box", "resources/models/CornellBox.obj", glm::float3( 1.0f, 102.0f, -30.0f ) },
-  { "Epic Sun Temple", "resources/models/SunTemple_v4/SunTemple/SunTemple_Reduced.fbx",
-    glm::float3( -13.0f, 513.7f, -1191.5f ) },
+  { "Epic Sun Temple", "resources/models/SunTemple_v4/SunTemple/SunTemple_Reduced.fbx", glm::float3( -13.0f, 513.7f, -1191.5f ) },
 };
 
 RaytracingScene::~RaytracingScene() {
@@ -77,10 +76,8 @@ RaytracingScene::~RaytracingScene() {
 }
 
 PathTracer::PathTracer( HINSTANCE anInstanceHandle, const char ** someArguments, uint aNumArguments, const char * aName,
-                        const Fancy::RenderPlatformProperties & someRenderProperties,
-                        const Fancy::WindowParameters &         someWindowParams )
-    : Application( anInstanceHandle, someArguments, aNumArguments, aName, "../../../../", someRenderProperties,
-                   someWindowParams ),
+                        const Fancy::RenderPlatformProperties & someRenderProperties, const Fancy::WindowParameters & someWindowParams )
+    : Application( anInstanceHandle, someArguments, aNumArguments, aName, "../../../../", someRenderProperties, someWindowParams ),
       myImGuiContext( ImGui::CreateContext() ) {
   ImGuiRendering::Init( myRenderOutput );
 
@@ -113,11 +110,9 @@ PathTracer::PathTracer( HINSTANCE anInstanceHandle, const char ** someArguments,
 }
 
 void PathTracer::LoadScene( const char * aPath, const glm::float3 & aCamPos ) {
-  eastl::fixed_vector< VertexShaderAttributeDesc, 16 > vertexAttributes = {
-    { VertexAttributeSemantic::POSITION, 0, DataFormat::RGB_32F },
-    { VertexAttributeSemantic::NORMAL, 0, DataFormat::RGB_32F },
-    { VertexAttributeSemantic::TEXCOORD, 0, DataFormat::RG_32F }
-  };
+  eastl::fixed_vector< VertexShaderAttributeDesc, 16 > vertexAttributes = { { VertexAttributeSemantic::POSITION, 0, DataFormat::RGB_32F },
+                                                                            { VertexAttributeSemantic::NORMAL, 0, DataFormat::RGB_32F },
+                                                                            { VertexAttributeSemantic::TEXCOORD, 0, DataFormat::RG_32F } };
 
   SceneData    sceneData;
   MeshImporter importer;
@@ -132,8 +127,7 @@ void PathTracer::LoadScene( const char * aPath, const glm::float3 & aCamPos ) {
   myScene = eastl::make_shared< Scene >( sceneData );
 
   myCamera.myPosition = aCamPos;
-  myCamera.myOrientation = glm::quat_cast( glm::lookAt(
-      glm::float3( 0.0f, 0.0f, 10.0f ), glm::float3( 0.0f, 0.0f, 0.0f ), glm::float3( 0.0f, 1.0f, 0.0f ) ) );
+  myCamera.myOrientation = glm::quat_cast( glm::lookAt( glm::float3( 0.0f, 0.0f, 10.0f ), glm::float3( 0.0f, 0.0f, 0.0f ), glm::float3( 0.0f, 1.0f, 0.0f ) ) );
 
   myCameraController.myMoveSpeed = 50.0f;
 
@@ -153,8 +147,7 @@ void PathTracer::InitSky() {
   mySky.reset( new Sky( skyParams ) );
 }
 
-glm::uvec2 GetOffsetSize( const VertexInputLayoutProperties & someVertexProps, VertexAttributeSemantic aSemantic,
-                          uint aSemanticIndex ) {
+glm::uvec2 GetOffsetSize( const VertexInputLayoutProperties & someVertexProps, VertexAttributeSemantic aSemantic, uint aSemanticIndex ) {
   uint offset = 0;
   for ( const VertexInputAttributeDesc & attribute : someVertexProps.myAttributes ) {
     uint size = BITS_TO_BYTES( DataFormatInfo::GetFormatInfo( attribute.myFormat ).myBitsPerPixel );
@@ -184,10 +177,9 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
     for ( const MeshPartData & meshPart : mesh.myParts ) {
       const VertexInputLayoutProperties & vertexProps = meshPart.myVertexLayoutProperties;
       ASSERT( !vertexProps.myAttributes.empty() &&
-              vertexProps.myAttributes[ 0 ].mySemantic ==
-                  VertexAttributeSemantic::POSITION );  // Assume there is no offset from the start of the vertex data
-                                                        // to the first position
-      ASSERT( vertexProps.myBufferBindings.size() == 1u );  // Assume the mesh is using only one interleaved buffer
+              vertexProps.myAttributes[ 0 ].mySemantic == VertexAttributeSemantic::POSITION );  // Assume there is no offset from the start of the vertex data
+                                                                                                // to the first position
+      ASSERT( vertexProps.myBufferBindings.size() == 1u );                                      // Assume the mesh is using only one interleaved buffer
 
       const uint numVertices = VECTOR_BYTESIZE( meshPart.myVertexData ) / vertexProps.GetOverallVertexSize();
 
@@ -216,10 +208,8 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
       glm::float2 myUv;
     };
 
-    glm::uvec2 normalOffsetSize =
-        GetOffsetSize( aScene.myVertexInputLayoutProperties, VertexAttributeSemantic::NORMAL, 0u );
-    glm::uvec2 uvOffsetSize =
-        GetOffsetSize( aScene.myVertexInputLayoutProperties, VertexAttributeSemantic::TEXCOORD, 0u );
+    glm::uvec2 normalOffsetSize = GetOffsetSize( aScene.myVertexInputLayoutProperties, VertexAttributeSemantic::NORMAL, 0u );
+    glm::uvec2 uvOffsetSize = GetOffsetSize( aScene.myVertexInputLayoutProperties, VertexAttributeSemantic::TEXCOORD, 0u );
     ASSERT( normalOffsetSize.y == sizeof( glm::float3 ) );
     ASSERT( uvOffsetSize.y == sizeof( glm::float2 ) );
 
@@ -257,19 +247,17 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
     bufferViewProps.myIsRaw = true;
     StaticString< 64 > name( "Rt mesh vertexData %d", iMesh );
     blasData.myVertexDataBuf = RenderCore::CreateBuffer( bufferProps, name.GetBuffer(), vertexData.data() );
-    blasData.myVertexData = RenderCore::CreateBufferView( RenderCore::GetBuffer( blasData.myVertexDataBuf ),
-                                                          bufferViewProps, name.GetBuffer() );
+    blasData.myVertexData = RenderCore::CreateBufferView( RenderCore::GetBuffer( blasData.myVertexDataBuf ), bufferViewProps, name.GetBuffer() );
 
     bufferProps.myNumElements = numMeshTriangles;
     bufferProps.myElementSizeBytes = sizeof( glm::uvec3 );
     name.Format( "Rt mesh triangles %d", iMesh );
     blasData.myTriangleIndicesBuf = RenderCore::CreateBuffer( bufferProps, name.GetBuffer(), triangleIndices.data() );
-    blasData.myTriangleIndices = RenderCore::CreateBufferView( RenderCore::GetBuffer( blasData.myTriangleIndicesBuf ),
-                                                               bufferViewProps, name.GetBuffer() );
+    blasData.myTriangleIndices = RenderCore::CreateBufferView( RenderCore::GetBuffer( blasData.myTriangleIndicesBuf ), bufferViewProps, name.GetBuffer() );
 
     name.Format( "BLAS mesh %d", iMesh );
-    blasData.myBLAS = RenderCore::CreateRtBottomLevelAccelerationStructure(
-        meshPartsGeometryDatas.data(), meshPartsGeometryDatas.size(), 0u, name.GetBuffer() );
+    blasData.myBLAS =
+        RenderCore::CreateRtBottomLevelAccelerationStructure( meshPartsGeometryDatas.data(), meshPartsGeometryDatas.size(), 0u, name.GetBuffer() );
     ASSERT( blasData.myBLAS.IsValid() );
   }
 
@@ -288,17 +276,14 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
     PerInstanceData & perInstanceData = perInstanceDatas.push_back();
     perInstanceData.myMaterialIndex = instance.myMaterialIndex;
     perInstanceData.myIndexBufferDescriptorIndex =
-        RenderCore::GetBufferView( myRtScene->myBlasDatas[ instance.myMeshIndex ].myTriangleIndices )
-            ->GetGlobalDescriptorIndex();
+        RenderCore::GetBufferView( myRtScene->myBlasDatas[ instance.myMeshIndex ].myTriangleIndices )->GetGlobalDescriptorIndex();
     perInstanceData.myVertexBufferDescriptorIndex =
-        RenderCore::GetBufferView( myRtScene->myBlasDatas[ instance.myMeshIndex ].myVertexData )
-            ->GetGlobalDescriptorIndex();
+        RenderCore::GetBufferView( myRtScene->myBlasDatas[ instance.myMeshIndex ].myVertexData )->GetGlobalDescriptorIndex();
 
     RtAccelerationStructureInstanceData & instanceData = instanceDatas.push_back();
     instanceData.myInstanceId = iInstance;
     instanceData.mySbtHitGroupOffset = 0;
-    instanceData.myInstanceBLAS =
-        RenderCore::GetRtAccelerationStructure( myRtScene->myBlasDatas[ instance.myMeshIndex ].myBLAS );
+    instanceData.myInstanceBLAS = RenderCore::GetRtAccelerationStructure( myRtScene->myBlasDatas[ instance.myMeshIndex ].myBLAS );
     instanceData.myInstanceMask = UINT8_MAX;
     instanceData.myTransform = instance.myTransform;
     instanceData.myFlags = RT_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE | RT_INSTANCE_FLAG_FORCE_OPAQUE;
@@ -310,10 +295,8 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
   bufferProps.myElementSizeBytes = sizeof( PerInstanceData );
   GpuBufferViewProperties bufferViewProps;
   bufferViewProps.myIsRaw = true;
-  myRtScene->myInstanceDataBuf =
-      RenderCore::CreateBuffer( bufferProps, "Rt per instance data", perInstanceDatas.data() );
-  myRtScene->myInstanceData = RenderCore::CreateBufferView( RenderCore::GetBuffer( myRtScene->myInstanceDataBuf ),
-                                                            bufferViewProps, "Rt per instance data" );
+  myRtScene->myInstanceDataBuf = RenderCore::CreateBuffer( bufferProps, "Rt per instance data", perInstanceDatas.data() );
+  myRtScene->myInstanceData = RenderCore::CreateBufferView( RenderCore::GetBuffer( myRtScene->myInstanceDataBuf ), bufferViewProps, "Rt per instance data" );
 
   struct MaterialData {
     glm::float3 myEmission;
@@ -332,22 +315,18 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
   bufferProps.myNumElements = materialDatas.size();
   bufferViewProps.myIsRaw = true;
   myRtScene->myMaterialDataBuf = RenderCore::CreateBuffer( bufferProps, "Rt material buffer", materialDatas.data() );
-  myRtScene->myMaterialData = RenderCore::CreateBufferView( RenderCore::GetBuffer( myRtScene->myMaterialDataBuf ),
-                                                            bufferViewProps, "Rt material buffer" );
+  myRtScene->myMaterialData = RenderCore::CreateBufferView( RenderCore::GetBuffer( myRtScene->myMaterialDataBuf ), bufferViewProps, "Rt material buffer" );
 
-  myRtScene->myTLAS = RenderCore::CreateRtTopLevelAccelerationStructure( instanceDatas.data(),
-                                                                         ( uint ) instanceDatas.size(), 0, "TLAS" );
+  myRtScene->myTLAS = RenderCore::CreateRtTopLevelAccelerationStructure( instanceDatas.data(), ( uint ) instanceDatas.size(), 0, "TLAS" );
 
   // Ao RT pipeline + SBT
   {
     RtPipelineStateProperties rtPipelineProps;
-    const uint raygenIdx = rtPipelineProps.AddRayGenShader( "resources/shaders/raytracing/Ao.hlsl", "RayGen" );
-    const uint hitIdxPrimary =
-        rtPipelineProps.AddHitGroup( L"HitGroup0", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr, nullptr, nullptr, nullptr,
-                                     "resources/shaders/raytracing/Ao.hlsl", "ClosestHitPrimary" );
-    const uint hitIdxAo =
-        rtPipelineProps.AddHitGroup( L"HitGroup1", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr, nullptr, nullptr, nullptr,
-                                     "resources/shaders/raytracing/Ao.hlsl", "ClosestHitAo" );
+    const uint                raygenIdx = rtPipelineProps.AddRayGenShader( "resources/shaders/raytracing/Ao.hlsl", "RayGen" );
+    const uint                hitIdxPrimary = rtPipelineProps.AddHitGroup( L"HitGroup0", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr, nullptr, nullptr, nullptr,
+                                                                           "resources/shaders/raytracing/Ao.hlsl", "ClosestHitPrimary" );
+    const uint                hitIdxAo = rtPipelineProps.AddHitGroup( L"HitGroup1", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr, nullptr, nullptr, nullptr,
+                                                                      "resources/shaders/raytracing/Ao.hlsl", "ClosestHitAo" );
     rtPipelineProps.SetMaxAttributeSize( 32u );
     rtPipelineProps.SetMaxPayloadSize( 128u );
     rtPipelineProps.SetMaxRecursionDepth( RenderCore::GetPlatformCaps().myRaytracingMaxRecursionDepth );
@@ -359,11 +338,9 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
     sbtProps.myNumHitShaderRecords = 5;
     myRtScene->myAoSBT = RenderCore::CreateRtShaderTable( sbtProps );
     RenderCore::GetRtShaderBindingTable( myRtScene->myAoSBT )
-        ->AddShaderRecord(
-            RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )->GetRayGenShaderIdentifier( raygenIdx ) );
+        ->AddShaderRecord( RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )->GetRayGenShaderIdentifier( raygenIdx ) );
     RenderCore::GetRtShaderBindingTable( myRtScene->myAoSBT )
-        ->AddShaderRecord(
-            RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )->GetHitShaderIdentifier( hitIdxPrimary ) );
+        ->AddShaderRecord( RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )->GetHitShaderIdentifier( hitIdxPrimary ) );
     RenderCore::GetRtShaderBindingTable( myRtScene->myAoSBT )
         ->AddShaderRecord( RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )->GetHitShaderIdentifier( hitIdxAo ) );
   }
@@ -371,10 +348,9 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
   // PathTracing RT pipeline + SBT
   {
     RtPipelineStateProperties rtPipelineProps;
-    const uint raygenIdx = rtPipelineProps.AddRayGenShader( "resources/shaders/raytracing/PathTracing.hlsl", "RayGen" );
-    const uint hitIdx =
-        rtPipelineProps.AddHitGroup( L"HitGroup0", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr, nullptr, nullptr, nullptr,
-                                     "resources/shaders/raytracing/PathTracing.hlsl", "ClosestHit" );
+    const uint                raygenIdx = rtPipelineProps.AddRayGenShader( "resources/shaders/raytracing/PathTracing.hlsl", "RayGen" );
+    const uint                hitIdx = rtPipelineProps.AddHitGroup( L"HitGroup0", RT_HIT_GROUP_TYPE_TRIANGLES, nullptr, nullptr, nullptr, nullptr,
+                                                                    "resources/shaders/raytracing/PathTracing.hlsl", "ClosestHit" );
     rtPipelineProps.SetMaxAttributeSize( 32u );
     rtPipelineProps.SetMaxPayloadSize( 128u );
     rtPipelineProps.SetMaxRecursionDepth( RenderCore::GetPlatformCaps().myRaytracingMaxRecursionDepth );
@@ -386,8 +362,7 @@ void PathTracer::InitRtScene( const SceneData & aScene ) {
     sbtProps.myNumHitShaderRecords = 5;
     myRtScene->mySBT = RenderCore::CreateRtShaderTable( sbtProps );
     RenderCore::GetRtShaderBindingTable( myRtScene->mySBT )
-        ->AddShaderRecord(
-            RenderCore::GetRtPipelineState( myRtScene->myRtPso )->GetRayGenShaderIdentifier( raygenIdx ) );
+        ->AddShaderRecord( RenderCore::GetRtPipelineState( myRtScene->myRtPso )->GetRayGenShaderIdentifier( raygenIdx ) );
     RenderCore::GetRtShaderBindingTable( myRtScene->mySBT )
         ->AddShaderRecord( RenderCore::GetRtPipelineState( myRtScene->myRtPso )->GetHitShaderIdentifier( hitIdx ) );
   }
@@ -410,8 +385,7 @@ void PathTracer::InitSampleSequences() {
   GpuBufferViewProperties viewProps;
   viewProps.myIsRaw = true;
   myRtScene->myHaltonSamplesBuf = RenderCore::CreateBuffer( props, "Halton samples", someSamples.data() );
-  myRtScene->myHaltonSamples = RenderCore::CreateBufferView( RenderCore::GetBuffer( myRtScene->myHaltonSamplesBuf ),
-                                                             viewProps, "Halton samples" );
+  myRtScene->myHaltonSamples = RenderCore::CreateBufferView( RenderCore::GetBuffer( myRtScene->myHaltonSamplesBuf ), viewProps, "Halton samples" );
 }
 
 PathTracer::~PathTracer() {
@@ -605,25 +579,19 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
 
   ctx->SetViewport( glm::uvec4( 0, 0, dstTexWidth, dstTexHeight ) );
   ctx->SetClipRect( glm::uvec4( 0, 0, dstTexWidth, dstTexHeight ) );
-  ctx->TextureBarrier( RenderCore::GetTextureView( myDepthStencilDsv )->GetTexture(),
-                       TextureLayout::Undefined, TextureLayout::DepthWrite );
-  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureLayout::Undefined,
-                       TextureLayout::RenderTarget );
-  ctx->ClearDepthStencilTarget( RenderCore::GetTextureView( myDepthStencilDsv ), 1.0f, 0u,
-                                ( uint ) DepthStencilClearFlags::CLEAR_ALL );
+  ctx->TextureBarrier( RenderCore::GetTextureView( myDepthStencilDsv )->GetTexture(), TextureLayout::Undefined, TextureLayout::DepthWrite );
+  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureLayout::Undefined, TextureLayout::RenderTarget );
+  ctx->ClearDepthStencilTarget( RenderCore::GetTextureView( myDepthStencilDsv ), 1.0f, 0u, ( uint ) DepthStencilClearFlags::CLEAR_ALL );
   glm::float4 clearColor( 0.0f );
   ctx->ClearRenderTarget( RenderCore::GetTextureView( myHdrLightTexRtv ), &clearColor[ 0 ] );
 
   ctx->GlobalBarrier( BarrierSyncScope::Graphics, BarrierSyncScope::AllShading, CacheFlush::RenderTargetWrite );
-  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureLayout::RenderTarget,
-                       TextureLayout::UAV );
+  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureLayout::RenderTarget, TextureLayout::UAV );
   mySky->Render( ctx, RenderCore::GetTextureView( myHdrLightTexWrite ), nullptr, myCamera );
   ctx->GlobalBarrier( BarrierSyncScope::AllShading, BarrierSyncScope::AllShading, CacheFlush::ShaderWrite );
-  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureLayout::UAV,
-                       TextureLayout::RenderTarget );
+  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureLayout::UAV, TextureLayout::RenderTarget );
 
-  ctx->SetRenderTarget( RenderCore::GetTextureView( myHdrLightTexRtv ),
-                        RenderCore::GetTextureView( myDepthStencilDsv ) );
+  ctx->SetRenderTarget( RenderCore::GetTextureView( myHdrLightTexRtv ), RenderCore::GetTextureView( myDepthStencilDsv ) );
 
   ctx->SetDepthStencilState( nullptr );
   ctx->SetBlendState( nullptr );
@@ -658,8 +626,7 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
       glm::float4x4 myWorldViewProj;
       glm::float4   myColor;
     };
-    Cbuffer_PerObject cbuffer_perObject{ myCamera.myViewProj * transform,
-                                         material->myParameters[ ( uint ) MaterialParameterType::COLOR ] };
+    Cbuffer_PerObject cbuffer_perObject{ myCamera.myViewProj * transform, material->myParameters[ ( uint ) MaterialParameterType::COLOR ] };
     ctx->BindConstantBuffer( &cbuffer_perObject, sizeof( cbuffer_perObject ), 0 );
 
     RenderMesh( mesh );
@@ -688,10 +655,9 @@ void PathTracer::RenderRT( CommandList * ctx ) {
     myNumAccumulationFrames = 0u;
   }
 
-  RtPipelineState *      rtPso = myRenderAo ? RenderCore::GetRtPipelineState( myRtScene->myAoRtPso )
-                                            : RenderCore::GetRtPipelineState( myRtScene->myRtPso );
-  RtShaderBindingTable * rtSbt = myRenderAo ? RenderCore::GetRtShaderBindingTable( myRtScene->myAoSBT )
-                                            : RenderCore::GetRtShaderBindingTable( myRtScene->mySBT );
+  RtPipelineState *      rtPso = myRenderAo ? RenderCore::GetRtPipelineState( myRtScene->myAoRtPso ) : RenderCore::GetRtPipelineState( myRtScene->myRtPso );
+  RtShaderBindingTable * rtSbt =
+      myRenderAo ? RenderCore::GetRtShaderBindingTable( myRtScene->myAoSBT ) : RenderCore::GetRtShaderBindingTable( myRtScene->mySBT );
   ctx->SetRaytracingPipelineState( rtPso );
 
   eastl::fixed_vector< glm::float3, 4 > nearPlaneVertices;
@@ -712,8 +678,7 @@ void PathTracer::RenderRT( CommandList * ctx ) {
 
   skyConsts.myAtmosphere = mySky->myAtmosphereParams;
   skyConsts.mySunDirection = mySky->mySunDir;
-  skyConsts.myTransmissionLutTexIdx =
-      ctx->GetPrepareDescriptorIndex( RenderCore::GetTextureView( mySky->myTransmittanceLutRead ) );
+  skyConsts.myTransmissionLutTexIdx = ctx->GetPrepareDescriptorIndex( RenderCore::GetTextureView( mySky->myTransmittanceLutRead ) );
   skyConsts.mySunIlluminance = mySky->mySunIlluminance;
   skyConsts.myRayMarchMinMaxSPP = glm::float2( 4.0f, 14.0f );
 
@@ -773,8 +738,7 @@ void PathTracer::RenderRT( CommandList * ctx ) {
   rtConsts.myPhongSpecularPower = myPhongSpecularPower;
   rtConsts.myFrameRandomSeed = ( uint ) Time::ourFrameIdx;
   rtConsts.myNumAccumulationFrames = myNumAccumulationFrames++;
-  rtConsts.myLinearClampSamplerIndex =
-      RenderCore::GetTextureSampler( RenderCore::ourLinearClampSampler )->GetGlobalDescriptorIndex();
+  rtConsts.myLinearClampSamplerIndex = RenderCore::GetTextureSampler( RenderCore::ourLinearClampSampler )->GetGlobalDescriptorIndex();
   rtConsts.myMaxRecursionDepth = ( uint ) myMaxRecursionDepth;
   rtConsts.mySkyConsts = skyConsts;
   ctx->BindConstantBuffer( &rtConsts, sizeof( rtConsts ), 0 );
@@ -814,23 +778,19 @@ void PathTracer::TonemapComposit( CommandList * ctx ) {
   TextureView * hdrLightTexRead = RenderCore::GetTextureView( myHdrLightTexRead );
   tonemapConsts.myIsBGR = renderOutput->GetBackbuffer()->GetProperties().myFormat == DataFormat::BGRA_8 ? 1 : 0;
   tonemapConsts.mySrcTextureIdx = hdrLightTexRead->GetGlobalDescriptorIndex();
-  tonemapConsts.myLinearClampSamplerIndex =
-      RenderCore::GetTextureSampler( RenderCore::ourLinearClampSampler )->GetGlobalDescriptorIndex();
-  tonemapConsts.myPixelToUv = glm::float2( 1.0f ) / glm::float2( renderOutput->GetWindow()->GetWidth(),
-                                                                 renderOutput->GetWindow()->GetHeight() );
+  tonemapConsts.myLinearClampSamplerIndex = RenderCore::GetTextureSampler( RenderCore::ourLinearClampSampler )->GetGlobalDescriptorIndex();
+  tonemapConsts.myPixelToUv = glm::float2( 1.0f ) / glm::float2( renderOutput->GetWindow()->GetWidth(), renderOutput->GetWindow()->GetHeight() );
   tonemapConsts.myNumAccumulationFrames = myNumAccumulationFrames;
   ctx->BindConstantBuffer( &tonemapConsts, sizeof( tonemapConsts ), 0 );
   ctx->GlobalBarrier( BarrierSyncScope::AllShading, BarrierSyncScope::AllShading, CacheFlush::ShaderWrite );
 
   glm::float2 fsTriangleVerts[] = { { -4.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 4.0f } };
   ctx->BindVertexBuffer( fsTriangleVerts, sizeof( fsTriangleVerts ) );
-  ctx->TextureBarrier( renderOutput->GetBackbuffer(), TextureLayout::Present,
-                       TextureLayout::RenderTarget );
+  ctx->TextureBarrier( renderOutput->GetBackbuffer(), TextureLayout::Present, TextureLayout::RenderTarget );
   ctx->SetRenderTarget( renderOutput->GetBackbufferRtv(), nullptr );
   ctx->DrawInstanced( 3, 1, 0, 0 );
   ctx->GlobalBarrier( BarrierSyncScope::Graphics, BarrierSyncScope::All, CacheFlush::RenderTargetWrite );
-  ctx->TextureBarrier( renderOutput->GetBackbuffer(), TextureLayout::RenderTarget,
-                       TextureLayout::Present );
+  ctx->TextureBarrier( renderOutput->GetBackbuffer(), TextureLayout::RenderTarget, TextureLayout::Present );
 }
 
 void PathTracer::EndFrame() {

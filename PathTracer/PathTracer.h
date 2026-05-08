@@ -58,8 +58,7 @@ struct RaytracingScene {
 class PathTracer : public Fancy::Application {
 public:
   PathTracer( HINSTANCE anInstanceHandle, const char ** someArguments, uint aNumArguments, const char * aName,
-              const Fancy::RenderPlatformProperties & someRenderProperties,
-              const Fancy::WindowParameters &         someWindowParams );
+              const Fancy::RenderPlatformProperties & someRenderProperties, const Fancy::WindowParameters & someWindowParams );
 
   void LoadScene( const char * aPath, const glm::float3 & aCamPos );
   void InitSky();

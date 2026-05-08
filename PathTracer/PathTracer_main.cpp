@@ -40,8 +40,7 @@ _Use_decl_annotations_ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE, LPSTR
   WindowParameters         windowParams;
   windowParams.myWidth = 1280;
   windowParams.myHeight = 720;
-  myApp.reset(
-      new PathTracer( hInstance, cStrings.data(), cStrings.size(), "Path Tracer", renderProperties, windowParams ) );
+  myApp.reset( new PathTracer( hInstance, cStrings.data(), cStrings.size(), "Path Tracer", renderProperties, windowParams ) );
 
   MSG msg = { 0 };
   while ( true ) {
