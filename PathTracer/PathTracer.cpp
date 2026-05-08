@@ -606,20 +606,21 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
   ctx->SetViewport( glm::uvec4( 0, 0, dstTexWidth, dstTexHeight ) );
   ctx->SetClipRect( glm::uvec4( 0, 0, dstTexWidth, dstTexHeight ) );
   ctx->TextureBarrier( RenderCore::GetTextureView( myDepthStencilDsv )->GetTexture(),
-                       TextureBarrierUsage::Undefined, TextureBarrierUsage::DepthWrite );
-  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureBarrierUsage::Undefined,
-                       TextureBarrierUsage::RenderTarget );
+                       TextureLayout::Undefined, TextureLayout::DepthWrite );
+  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureLayout::Undefined,
+                       TextureLayout::RenderTarget );
   ctx->ClearDepthStencilTarget( RenderCore::GetTextureView( myDepthStencilDsv ), 1.0f, 0u,
                                 ( uint ) DepthStencilClearFlags::CLEAR_ALL );
   glm::float4 clearColor( 0.0f );
   ctx->ClearRenderTarget( RenderCore::GetTextureView( myHdrLightTexRtv ), &clearColor[ 0 ] );
 
-  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureBarrierUsage::RenderTarget,
-                       TextureBarrierUsage::UAV );
+  ctx->GlobalBarrier( BarrierSyncScope::Graphics, BarrierSyncScope::AllShading, CacheFlush::RenderTargetWrite );
+  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureLayout::RenderTarget,
+                       TextureLayout::UAV );
   mySky->Render( ctx, RenderCore::GetTextureView( myHdrLightTexWrite ), nullptr, myCamera );
   ctx->GlobalBarrier( BarrierSyncScope::AllShading, BarrierSyncScope::AllShading, CacheFlush::ShaderWrite );
-  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureBarrierUsage::UAV,
-                       TextureBarrierUsage::RenderTarget );
+  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureLayout::UAV,
+                       TextureLayout::RenderTarget );
 
   ctx->SetRenderTarget( RenderCore::GetTextureView( myHdrLightTexRtv ),
                         RenderCore::GetTextureView( myDepthStencilDsv ) );
@@ -664,7 +665,8 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
     RenderMesh( mesh );
   }
 
-  ctx->TextureBarrier( RenderCore::GetTextureView( myHdrLightTexRead )->GetTexture(), TextureBarrierUsage::RenderTarget, TextureBarrierUsage::ShaderResource );
+  ctx->GlobalBarrier( BarrierSyncScope::Graphics, BarrierSyncScope::AllShading, CacheFlush::RenderTargetWrite );
+  ctx->TextureBarrier( RenderCore::GetTextureView( myHdrLightTexRead )->GetTexture(), TextureLayout::RenderTarget, TextureLayout::ShaderResource );
 }
 
 void PathTracer::RenderRT( CommandList * ctx ) {
@@ -822,12 +824,13 @@ void PathTracer::TonemapComposit( CommandList * ctx ) {
 
   glm::float2 fsTriangleVerts[] = { { -4.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 4.0f } };
   ctx->BindVertexBuffer( fsTriangleVerts, sizeof( fsTriangleVerts ) );
-  ctx->TextureBarrier( renderOutput->GetBackbuffer(), TextureBarrierUsage::Present,
-                       TextureBarrierUsage::RenderTarget );
+  ctx->TextureBarrier( renderOutput->GetBackbuffer(), TextureLayout::Present,
+                       TextureLayout::RenderTarget );
   ctx->SetRenderTarget( renderOutput->GetBackbufferRtv(), nullptr );
   ctx->DrawInstanced( 3, 1, 0, 0 );
-  ctx->TextureBarrier( renderOutput->GetBackbuffer(), TextureBarrierUsage::RenderTarget,
-                       TextureBarrierUsage::Present );
+  ctx->GlobalBarrier( BarrierSyncScope::Graphics, BarrierSyncScope::All, CacheFlush::RenderTargetWrite );
+  ctx->TextureBarrier( renderOutput->GetBackbuffer(), TextureLayout::RenderTarget,
+                       TextureLayout::Present );
 }
 
 void PathTracer::EndFrame() {
