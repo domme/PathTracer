@@ -605,12 +605,21 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
 
   ctx->SetViewport( glm::uvec4( 0, 0, dstTexWidth, dstTexHeight ) );
   ctx->SetClipRect( glm::uvec4( 0, 0, dstTexWidth, dstTexHeight ) );
+  ctx->TextureBarrier( RenderCore::GetTextureView( myDepthStencilDsv )->GetTexture(),
+                       TextureBarrierUsage::Undefined, TextureBarrierUsage::DepthWrite );
+  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureBarrierUsage::Undefined,
+                       TextureBarrierUsage::RenderTarget );
   ctx->ClearDepthStencilTarget( RenderCore::GetTextureView( myDepthStencilDsv ), 1.0f, 0u,
                                 ( uint ) DepthStencilClearFlags::CLEAR_ALL );
   glm::float4 clearColor( 0.0f );
   ctx->ClearRenderTarget( RenderCore::GetTextureView( myHdrLightTexRtv ), &clearColor[ 0 ] );
 
+  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureBarrierUsage::RenderTarget,
+                       TextureBarrierUsage::UAV );
   mySky->Render( ctx, RenderCore::GetTextureView( myHdrLightTexWrite ), nullptr, myCamera );
+  ctx->GlobalBarrier( BarrierSyncScope::AllShading, BarrierSyncScope::AllShading, CacheFlush::ShaderWrite );
+  ctx->TextureBarrier( hdrLightTexRead->GetTexture(), TextureBarrierUsage::UAV,
+                       TextureBarrierUsage::RenderTarget );
 
   ctx->SetRenderTarget( RenderCore::GetTextureView( myHdrLightTexRtv ),
                         RenderCore::GetTextureView( myDepthStencilDsv ) );
@@ -654,6 +663,8 @@ void PathTracer::RenderRaster( CommandList * ctx ) {
 
     RenderMesh( mesh );
   }
+
+  ctx->TextureBarrier( RenderCore::GetTextureView( myHdrLightTexRead )->GetTexture(), TextureBarrierUsage::RenderTarget, TextureBarrierUsage::ShaderResource );
 }
 
 void PathTracer::RenderRT( CommandList * ctx ) {
@@ -666,13 +677,11 @@ void PathTracer::RenderRT( CommandList * ctx ) {
   TextureView * hdrLightTexWrite = RenderCore::GetTextureView( myHdrLightTexWrite );
 
   if ( myAccumulationNeedsClear ) {
-    ctx->PrepareResourceShaderAccess( hdrLightTexWrite );
-
     uint texIdx = hdrLightTexWrite->GetGlobalDescriptorIndex();
     ctx->BindConstantBuffer( &texIdx, sizeof( texIdx ), 0 );
     ctx->SetShaderPipeline( RenderCore::GetShaderPipeline( myClearTextureShader ) );
     ctx->Dispatch( glm::ivec3( dstTexWidth, dstTexHeight, 1 ) );
-    ctx->ResourceUAVbarrier( hdrLightTexWrite->GetTexture() );
+    ctx->GlobalBarrier( BarrierSyncScope::AllShading, BarrierSyncScope::AllShading, CacheFlush::ShaderWrite );
     myAccumulationNeedsClear = false;
     myNumAccumulationFrames = 0u;
   }
@@ -768,12 +777,6 @@ void PathTracer::RenderRT( CommandList * ctx ) {
   rtConsts.mySkyConsts = skyConsts;
   ctx->BindConstantBuffer( &rtConsts, sizeof( rtConsts ), 0 );
 
-  ctx->PrepareResourceShaderAccess( hdrLightTexWrite );
-  ctx->PrepareResourceShaderAccess( tlas->GetBufferRead() );
-  ctx->PrepareResourceShaderAccess( instanceData );
-  ctx->PrepareResourceShaderAccess( materialData );
-  ctx->PrepareResourceShaderAccess( haltonSamples );
-
   DispatchRaysDesc desc;
   desc.myRayGenShaderTableRange = rtSbt->GetRayGenRange();
   desc.myMissShaderTableRange = rtSbt->GetMissRange();
@@ -783,7 +786,7 @@ void PathTracer::RenderRT( CommandList * ctx ) {
   desc.myDepth = 1;
   ctx->DispatchRays( desc );
 
-  ctx->ResourceUAVbarrier( hdrLightTexWrite->GetTexture() );
+  ctx->GlobalBarrier( BarrierSyncScope::AllShading, BarrierSyncScope::AllShading, CacheFlush::ShaderWrite );
 }
 
 void PathTracer::TonemapComposit( CommandList * ctx ) {
@@ -815,12 +818,16 @@ void PathTracer::TonemapComposit( CommandList * ctx ) {
                                                                  renderOutput->GetWindow()->GetHeight() );
   tonemapConsts.myNumAccumulationFrames = myNumAccumulationFrames;
   ctx->BindConstantBuffer( &tonemapConsts, sizeof( tonemapConsts ), 0 );
-  ctx->PrepareResourceShaderAccess( hdrLightTexRead );
+  ctx->GlobalBarrier( BarrierSyncScope::AllShading, BarrierSyncScope::AllShading, CacheFlush::ShaderWrite );
 
   glm::float2 fsTriangleVerts[] = { { -4.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 4.0f } };
   ctx->BindVertexBuffer( fsTriangleVerts, sizeof( fsTriangleVerts ) );
+  ctx->TextureBarrier( renderOutput->GetBackbuffer(), TextureBarrierUsage::Present,
+                       TextureBarrierUsage::RenderTarget );
   ctx->SetRenderTarget( renderOutput->GetBackbufferRtv(), nullptr );
   ctx->DrawInstanced( 3, 1, 0, 0 );
+  ctx->TextureBarrier( renderOutput->GetBackbuffer(), TextureBarrierUsage::RenderTarget,
+                       TextureBarrierUsage::Present );
 }
 
 void PathTracer::EndFrame() {

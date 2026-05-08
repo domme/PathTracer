@@ -144,7 +144,7 @@ void Sky::ComputeTranmittanceLut( CommandList * ctx ) {
   ctx->SetShaderPipeline( RenderCore::GetShaderPipeline( myComputeTransmittanceLut ) );
   ctx->Dispatch( { SkyLutConsts::TRANSMITTANCE_TEXTURE_WIDTH, SkyLutConsts::TRANSMITTANCE_TEXTURE_HEIGHT, 1 } );
 
-  ctx->ResourceUAVbarrier( RenderCore::GetTextureView( myTransmittanceLutWrite )->GetTexture() );
+  ctx->GlobalBarrier( BarrierSyncScope::AllShading, BarrierSyncScope::AllShading, CacheFlush::ShaderWrite );
 }
 
 void Sky::ComputeSkyViewLut( CommandList * ctx, const Camera & aCamera ) {
@@ -185,7 +185,7 @@ void Sky::ComputeSkyViewLut( CommandList * ctx, const Camera & aCamera ) {
 
   ctx->SetShaderPipeline( RenderCore::GetShaderPipeline( myComputeSkyViewLut ) );
   ctx->Dispatch( { SkyLutConsts::SKY_VIEW_TEXTURE_WIDTH, SkyLutConsts::SKY_VIEW_TEXTURE_HEIGHT, 1 } );
-  ctx->ResourceUAVbarrier( RenderCore::GetTextureView( mySkyViewLutWrite )->GetTexture() );
+  ctx->GlobalBarrier( BarrierSyncScope::AllShading, BarrierSyncScope::AllShading, CacheFlush::ShaderWrite );
 }
 
 void Sky::Render( CommandList * ctx, TextureView * aDestTextureWrite, TextureView * aDepthBufferRead,
@@ -231,5 +231,5 @@ void Sky::Render( CommandList * ctx, TextureView * aDestTextureWrite, TextureVie
 
   ctx->Dispatch( { texSize.x, texSize.y, 1 } );
 
-  ctx->ResourceUAVbarrier( aDestTextureWrite->GetTexture() );
+  ctx->GlobalBarrier( BarrierSyncScope::AllShading, BarrierSyncScope::AllShading, CacheFlush::ShaderWrite );
 }

@@ -48,6 +48,41 @@ ResourcePool uses this strategy: `ResourcePool< T, DestructorT, StaticCapacity >
 
 All C++ code is formatted with **clang-format** (configuration in `.clang-format` at project root).
 
+### Type Deduction — `auto`
+
+**Never use `auto` for variable type deduction.** Always spell out the concrete type explicitly.  
+The only exception is locally-scoped lambda function objects, where the type is anonymous and cannot be spelled out.
+
+**However, when lambdas are used as helper functions that perform type conversions or logical transformations (e.g., `locResolveSync`, `locResolveLayout`), extract them as file-static functions in the anonymous namespace at the top of the file.** Place them immediately above the function that calls them for readability and to avoid code duplication.
+
+```cpp
+// ❌ avoid — lambda helper functions reduce readability
+void CommandListDX12::TextureBarrier( Texture * aTexture, TextureBarrierUsage aFromUsage,
+                                      TextureBarrierUsage aToUsage ) {
+  auto locResolveSync = []( TextureBarrierUsage aUsage ) -> D3D12_BARRIER_SYNC { ... };
+  // ... uses locResolveSync multiple times
+}
+
+// ✅ correct — extract as file-static function
+namespace {
+  D3D12_BARRIER_SYNC locResolveTextureBarrierSync( TextureBarrierUsage aUsage ) {
+    switch ( aUsage ) {
+      // ...
+    }
+  }
+}
+void CommandListDX12::TextureBarrier( Texture * aTexture, TextureBarrierUsage aFromUsage,
+                                      TextureBarrierUsage aToUsage ) {
+  D3D12_TEXTURE_BARRIER barrier = {};
+  barrier.SyncBefore = locResolveTextureBarrierSync( aFromUsage );
+  barrier.SyncAfter = locResolveTextureBarrierSync( aToUsage );
+  // ...
+}
+
+// ✅ allowed — simple, one-off lambdas with no reuse can remain inline
+auto locTransform = []( const glm::vec3 & v ) { return v * 2.0f; };
+```
+
 ### Indentation & Spacing
 
 - **Indentation:** 2 spaces per level
