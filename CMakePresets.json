@@ -13,6 +13,7 @@
         "VCPKG_TARGET_TRIPLET": "x64-windows",
         "VCPKG_MANIFEST_DIR": "${sourceDir}/FANCY",
         "VCPKG_INSTALLED_DIR": "${sourceDir}/FANCY/vcpkg_installed",
+        "VCPKG_APPLOCAL_DEPS": "OFF",
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
       }
     }
