@@ -42,6 +42,7 @@ ColumnLimit: 120
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
 
 # ----- Includes -----
 SortIncludes: Never
