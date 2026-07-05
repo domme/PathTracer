@@ -889,7 +889,7 @@ void PathTracer::UpdateDepthbuffer() {
   TextureProperties dsTexProps;
   dsTexProps.myDimension = GpuResourceDimension::TEXTURE_2D;
   dsTexProps.bIsDepthStencil = true;
-  dsTexProps.myFormat = DataFormat::D_24UNORM_S_8UI;
+  dsTexProps.myFormat = DataFormat::D_32FLOAT_S_8UI;
   dsTexProps.myIsRenderTarget = true;
   dsTexProps.myIsShaderWritable = false;
   dsTexProps.myWidth = width;
@@ -903,7 +903,7 @@ void PathTracer::UpdateDepthbuffer() {
   TextureViewProperties props;
   props.myDimension = GpuResourceDimension::TEXTURE_2D;
   props.myIsRenderTarget = true;
-  props.myFormat = DataFormat::D_24UNORM_S_8UI;
+  props.myFormat = DataFormat::D_32FLOAT_S_8UI;
   props.mySubresourceRange = dsTex->mySubresources;
   myDepthStencilDsv = RenderCore::CreateTextureView( dsTex, props, "DepthStencil Texture" );
   ASSERT( myDepthStencilDsv.IsValid() );
