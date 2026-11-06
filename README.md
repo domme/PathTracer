@@ -2,6 +2,8 @@
 
 A small GPU-based pathtracer using hardware raytracing, built on top of the `FANCY` rendering framework.
 
+For a detailed codebase map, architecture notes, dependency/build explanation, and AI-agent onboarding guidance, see [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md).
+
 ![Screenshot 2022-11-05 142222](https://user-images.githubusercontent.com/94477/200122499-4c9c80cb-0d4d-4f16-abe9-868f204909fa.png)
 
 ## Prerequisites

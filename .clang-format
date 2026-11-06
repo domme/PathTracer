@@ -36,7 +36,7 @@ ReferenceAlignment: Middle         # Type & name
 DerivePointerAlignment: false
 
 # ----- Column limit -----
-ColumnLimit: 120
+ColumnLimit: 150
 
 # ----- Short constructs — keep on same line -----
 AllowShortFunctionsOnASingleLine: Empty
@@ -48,7 +48,7 @@ AllowShortBlocksOnASingleLine: Never
 SortIncludes: Never
 
 # ----- Alignment -----
-AlignConsecutiveDeclarations: true  # align variable names in consecutive declarations
+AlignConsecutiveDeclarations: false  # a single space between type and name, no aligned columns
 
 # ----- Comments -----
 # Manual: Place "//---------------------------------------------------------------------------//" 
